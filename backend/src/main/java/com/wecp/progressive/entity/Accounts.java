@@ -55,4 +55,4 @@ public class Accounts implements Comparable<Accounts> {
         // Implement comparison logic based on account balance
         return Double.compare(this.getBalance(), otherAccounts.getBalance());
     }
-}  
+}
