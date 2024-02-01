@@ -1,6 +1,11 @@
 package com.wecp.progressive.service;
 
+import com.wecp.progressive.entity.Accounts;
 import com.wecp.progressive.entity.Transactions;
+import com.wecp.progressive.repository.AccountRepository;
+import com.wecp.progressive.repository.TransactionRepository;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.sql.SQLException;
@@ -8,7 +13,13 @@ import java.util.List;
 
 @Service
 public class TransactionServiceImplJpa implements TransactionService {
-
+    private TransactionRepository transactionRepository;
+    private AccountRepository accountRepository;
+    @Autowired
+    public TransactionServiceImplJpa(TransactionRepository transactionRepository,AccountRepository accountRepository) {
+        this.transactionRepository = transactionRepository;
+        this.accountRepository = accountRepository;
+    }
     @Override
     public List<Transactions> getAllTransactions() throws SQLException {
         return null;
@@ -36,7 +47,6 @@ public class TransactionServiceImplJpa implements TransactionService {
 
     @Override
     public List<Transactions> getTransactionsByCustomerId(int customerId) throws SQLException {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getTransactionsByCustomerId'");
+        return null;
     }
 }
