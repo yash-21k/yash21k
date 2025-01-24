@@ -1,27 +1,39 @@
-<dependency>
-    <groupId>org.apache.parquet</groupId>
-    <artifactId>parquet-column</artifactId>
-    <version>1.12.3</version>
-    <exclusions>
-        <exclusion>
-            <groupId>log4j</groupId>
-            <artifactId>log4j</artifactId>
-        </exclusion>
-    </exclusions>
-</dependency>
+public Account matchAccountWithOfficeCurrency(String bic, String processingEntity, String traceId, MessageHeader messageHeader) throws Exception {
 
-<dependency>
-    <groupId>org.apache.parquet</groupId>
-    <artifactId>parquet-column</artifactId>
-    <version>1.12.3</version> <!-- Use the latest stable version -->
-</dependency>
-<dependency>
-    <groupId>org.apache.parquet</groupId>
-    <artifactId>parquet-common</artifactId>
-    <version>1.12.3</version>
-</dependency>
-<dependency>
-    <groupId>org.apache.parquet</groupId>
-    <artifactId>parquet-encoding</artifactId>
-    <version>1.12.3</version>
-</dependency>
+    String office = mapOfOfficeToEntity.get(processingEntity);
+    String currency = officeToCurrencyMap.get(office);
+    Account account = null;
+
+    logger.info("traceId = {}, Info Code (10032), Matching Account With Office = {} And Currency = {} And Processing Entity = ()", 
+                traceId, office, currency, processingEntity);
+
+    try {
+        List<Account> accountList = BigDataRetrieval.retrieveAccountCustomerList(bic, traceId, messageHeader);
+        List<Customer> customerList = BigDataRetrieval.retrieveCustomer(bic, traceId, messageHeader);
+
+        if (accountList != null && !accountList.isEmpty() && customerList != null && !customerList.isEmpty()) {
+            for (Account account1 : accountList) {
+                if ((account1.getOffice() != null && account1.getOffice().equalsIgnoreCase(office)) &&
+                    (account1.getCurrency() != null && account1.getCurrency().equalsIgnoreCase(currency)) &&
+                    (account1.getRec_status() != null && account1.getRec_status().equals("AC"))) {
+
+                    for (Customer customer : customerList) {
+                        if (customer.getCust_code() != null && account1.getCust_code() != null &&
+                            customer.getCust_code().equals(account1.getCust_code()) &&
+                            customer.getRec_status() != null && customer.getRec_status().equals("AC")) {
+                            account = account1;
+                            break;
+                        }
+                    }
+                }
+                if (account != null) {
+                    break;
+                }
+            }
+        }
+    } catch (Exception e) {
+        throw new RuntimeException(e);
+    }
+
+    return account;
+}
