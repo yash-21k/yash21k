@@ -1,6 +1,0 @@
-LifeCycleBusinessE2EStatus.mapping = \
-'Payment Returned'=[['RETURNS OF FUNDS', 'ANY', 'Payment Returned'], ['Any', 'Resolved complete', 'Payment Returned']], \
-'Return Received by HSBC(Pending information from RM/Customer)'=[['RETURNS OF FUNDS', 'ANY', 'Pending information from RM/Customer']], \
-'Rejected by HSBC'=[['Unable to Effect', 'ANY', 'Payment Returned'], ['Unable to Effect', 'ANY', 'Payment Cancelled']], \
-'Payment Returned(As per cancellation request)'=[['Cancellation request', 'Resolved complete', 'Payment Returned']], \
-'Payment Re-effected by HSBC'=[['Unable to Effect', 'ANY', 'Payment re-effected']]
