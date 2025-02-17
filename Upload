@@ -7,6 +7,7 @@ public String populateLifeCycleBusinessE2EStatus(
     try {
         Logger.info("traceId = {} Populating LifeCycleBusiness E2EStatus for VETR = {}", traceId, messageHeader.getUetr());
 
+        // Extracting values from gpiDataHolder
         String gpiInvestigationCaseType = gpiDataHolder.getGPIDetails().getTransactionInfo().getGPIInvestigationCaseType();
         String assetStatus = gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetStatus();
         String assetSubStatus = gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetSubStatus();
@@ -14,13 +15,21 @@ public String populateLifeCycleBusinessE2EStatus(
         for (Map.Entry<List<String>, String> entry : lifecycleBusinessE2EStatus.entrySet()) {
             List<String> conditions = entry.getKey();
 
-            if (
-                ("ANY".equalsIgnoreCase(conditions.get(0)) || conditions.get(0).equalsIgnoreCase(gpiInvestigationCaseType)) &&
-                ("ANY".equalsIgnoreCase(conditions.get(1)) || conditions.get(1).equalsIgnoreCase(assetStatus)) &&
-                ("ANY".equalsIgnoreCase(conditions.get(2)) || conditions.get(2).equalsIgnoreCase(assetSubStatus))
-            ) {
+            // Ensure the key list has exactly 3 elements
+            if (conditions.size() != 3) {
+                continue;
+            }
+
+            // Check each condition while handling "ANY" as a wildcard
+            boolean matches = 
+                (conditions.get(0).equalsIgnoreCase("ANY") || conditions.get(0).equalsIgnoreCase(gpiInvestigationCaseType)) &&
+                (conditions.get(1).equalsIgnoreCase("ANY") || conditions.get(1).equalsIgnoreCase(assetStatus)) &&
+                (conditions.get(2).equalsIgnoreCase("ANY") || conditions.get(2).equalsIgnoreCase(assetSubStatus));
+
+            if (matches) {
+                Logger.info("Matched Rule: {} -> {}", conditions, entry.getValue());  // Debugging output
                 lifeCycleBusinessE2EStatus = entry.getValue();
-                break;
+                break; // Stop at the first matching rule
             }
         }
     } catch (Exception e) {
