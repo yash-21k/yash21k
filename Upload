@@ -12,6 +12,9 @@ public String populateLifeCycleBusinessE2EStatus(
         String assetStatus = gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetStatus();
         String assetSubStatus = gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetSubStatus();
 
+        // Define excluded keywords (converted to lowercase for case-insensitive comparison)
+        List<String> excludedKeywords = Arrays.asList("Unable to Effect", "Return of Funds", "Cancellation Request");
+
         for (Map.Entry<List<String>, String> entry : lifecycleBusinessE2EStatus.entrySet()) {
             List<String> conditions = entry.getKey();
 
@@ -20,9 +23,14 @@ public String populateLifeCycleBusinessE2EStatus(
                 continue;
             }
 
-            // Check each condition while handling "ANY" as a wildcard
+            // Case-insensitive check for exclusion
+            boolean isExcluded = excludedKeywords.stream()
+                    .anyMatch(keyword -> keyword.equalsIgnoreCase(gpiInvestigationCaseType));
+
+            // Check conditions with case-insensitive matching
             boolean matches = 
-                (conditions.get(0).equalsIgnoreCase("ANY") || conditions.get(0).equalsIgnoreCase(gpiInvestigationCaseType)) &&
+                ((conditions.get(0).equalsIgnoreCase("ANY") && !isExcluded) || 
+                 conditions.get(0).equalsIgnoreCase(gpiInvestigationCaseType)) &&
                 (conditions.get(1).equalsIgnoreCase("ANY") || conditions.get(1).equalsIgnoreCase(assetStatus)) &&
                 (conditions.get(2).equalsIgnoreCase("ANY") || conditions.get(2).equalsIgnoreCase(assetSubStatus));
 
