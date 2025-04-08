@@ -1,0 +1,2 @@
+Ravin has proposed a solution where the MT message is converted into an MX message using GPE fields (MIF). After this conversion, we will map our BDEs accordingly. As far as I understand, this is currently just a proof of concept (POC).
+
