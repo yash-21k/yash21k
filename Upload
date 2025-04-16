@@ -1,2 +1,19 @@
-Ravin has proposed a solution where the MT message is converted into an MX message using GPE fields (MIF). After this conversion, we will map our BDEs accordingly. As far as I understand, this is currently just a proof of concept (POC).
+Sure! Here's a polished version of your message:
+
+
+---
+
+I attempted to replicate this issue in my local environment and found two key points:
+
+1. The message did not generate a valid row key because it was converted to PACS.009 due to the presence of the /ACC/RTN/ keyword in the MT payload.
+
+
+2. In the gpirt table, the endToEndId was null, which is required for a PACS.009 message, and as a result, the message was not processed.
+
+
+
+
+---
+
+Let me know if you'd like it to sound more formal or technical.
 
