@@ -3,7 +3,7 @@ import uuid
 
 # File paths
 input_json_path = 'input.json'          # Your original JSON file
-output_json_path = 'output.json'         # Where you want to save the updated JSON
+output_json_path = 'output.json'        # Where you want to save the updated JSON
 
 # Step 1: Load the JSON file
 with open(input_json_path, 'r', encoding='utf-8') as f:
@@ -11,7 +11,7 @@ with open(input_json_path, 'r', encoding='utf-8') as f:
 
 # Step 2: Generate 100 new UUIDs
 new_uetrs = [str(uuid.uuid4()) for _ in range(100)]
-
+replaced_uetrs = []  # To store used UUIDs
 uetr_index = 0
 
 # Step 3: Define a recursive function to replace all 'uetr' fields
@@ -21,6 +21,7 @@ def replace_uetr(obj):
         for key, value in obj.items():
             if key == 'uetr' and uetr_index < len(new_uetrs):
                 obj[key] = new_uetrs[uetr_index]
+                replaced_uetrs.append(new_uetrs[uetr_index])
                 uetr_index += 1
             else:
                 replace_uetr(value)
@@ -35,4 +36,6 @@ replace_uetr(data)
 with open(output_json_path, 'w', encoding='utf-8') as f:
     json.dump(data, f, indent=2)
 
-print(f"Finished replacing {uetr_index} UETRs. Output written to {output_json_path}.")
+# Step 6: Print replaced UETRs
+print("Replaced UETRs:")
+print(tuple(replaced_uetrs))
