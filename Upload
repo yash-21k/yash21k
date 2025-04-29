@@ -1,19 +1,38 @@
-Sure! Here's a polished version of your message:
+import json
+import uuid
 
+# File paths
+input_json_path = 'input.json'          # Your original JSON file
+output_json_path = 'output.json'         # Where you want to save the updated JSON
 
----
+# Step 1: Load the JSON file
+with open(input_json_path, 'r', encoding='utf-8') as f:
+    data = json.load(f)
 
-I attempted to replicate this issue in my local environment and found two key points:
+# Step 2: Generate 100 new UUIDs
+new_uetrs = [str(uuid.uuid4()) for _ in range(100)]
 
-1. The message did not generate a valid row key because it was converted to PACS.009 due to the presence of the /ACC/RTN/ keyword in the MT payload.
+uetr_index = 0
 
+# Step 3: Define a recursive function to replace all 'uetr' fields
+def replace_uetr(obj):
+    global uetr_index
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key == 'uetr' and uetr_index < len(new_uetrs):
+                obj[key] = new_uetrs[uetr_index]
+                uetr_index += 1
+            else:
+                replace_uetr(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            replace_uetr(item)
 
-2. In the gpirt table, the endToEndId was null, which is required for a PACS.009 message, and as a result, the message was not processed.
+# Step 4: Replace UETRs
+replace_uetr(data)
 
+# Step 5: Save the updated JSON
+with open(output_json_path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
 
-
-
----
-
-Let me know if you'd like it to sound more formal or technical.
-
+print(f"Finished replacing {uetr_index} UETRs. Output written to {output_json_path}.")
