@@ -1,56 +1,8 @@
-import json
-import uuid
 
-# File paths
-input_json_path = 'input.json'           # Your original JSON file
-output_json_path = 'output.json'         # File to save the updated JSON
 
-# Step 1: Load the JSON
-with open(input_json_path, 'r', encoding='utf-8') as f:
-    data = json.load(f)
+I have reviewed the GPI and GMG data flow jobs.
 
-# Step 2: Count how many 'uetr' fields exist
-def count_uetr_fields(obj):
-    count = 0
-    if isinstance(obj, dict):
-        for key, value in obj.items():
-            if key == 'uetr':
-                count += 1
-            count += count_uetr_fields(value)
-    elif isinstance(obj, list):
-        for item in obj:
-            count += count_uetr_fields(item)
-    return count
+GPI: Only two messages were received, both of which had unsupported message types. As a result, they were blocked by our deduplication data flow job. We expect GPI real-time data to start flowing once the business users begin working with real-time inputs.
 
-total_uetrs = count_uetr_fields(data)
-print(f"Found {total_uetrs} UETR fields.")
+GMG: We are successfully processing GB and FR messages. These messages are being persisted in both BigQuery and BigTable.
 
-# Step 3: Generate that many UUIDs
-new_uetrs = [str(uuid.uuid4()) for _ in range(total_uetrs)]
-replaced_uetrs = []
-uetr_index = 0
-
-# Step 4: Replace 'uetr' fields
-def replace_uetr(obj):
-    global uetr_index
-    if isinstance(obj, dict):
-        for key, value in obj.items():
-            if key == 'uetr' and uetr_index < len(new_uetrs):
-                obj[key] = new_uetrs[uetr_index]
-                replaced_uetrs.append(new_uetrs[uetr_index])
-                uetr_index += 1
-            else:
-                replace_uetr(value)
-    elif isinstance(obj, list):
-        for item in obj:
-            replace_uetr(item)
-
-replace_uetr(data)
-
-# Step 5: Save updated JSON
-with open(output_json_path, 'w', encoding='utf-8') as f:
-    json.dump(data, f, indent=2)
-
-# Step 6: Print replaced UUIDs
-print("Replaced UETRs:")
-print(tuple(replaced_uetrs))
