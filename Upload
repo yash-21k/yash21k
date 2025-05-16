@@ -9,27 +9,87 @@ public class PropertiesFileValidationTest {
 
     @Test
     public void validateAllPropertiesFiles() throws IOException {
-        Path rootDir = Paths.get("src/main/resources"); // change this if needed
-        List<Path> propertyFiles = new ArrayList<>();
+        Path rootDir = Paths.get("src/main/resources"); // <-- adjust to your properties directory
+        List<Path> files = new ArrayList<>();
 
+        // Collect all .properties files
         Files.walk(rootDir)
-                .filter(path -> path.toString().endsWith(".properties"))
-                .forEach(propertyFiles::add);
+                .filter(p -> p.toString().endsWith(".properties"))
+                .forEach(files::add);
 
         boolean allValid = true;
 
-        for (Path path : propertyFiles) {
-            System.out.println("Validating: " + path);
-            try (InputStream in = Files.newInputStream(path)) {
-                Properties props = new Properties();
-                props.load(in);  // this throws an IOException on invalid format
-            } catch (IOException e) {
+        for (Path file : files) {
+            System.out.println("Validating: " + file);
+            boolean valid = validateFile(file);
+            if (!valid) {
                 allValid = false;
-                System.err.println("  [Error] File: " + path);
-                System.err.println("  " + e.getMessage());
             }
         }
 
         assertTrue(allValid, "One or more .properties files have syntax errors.");
+    }
+
+    private boolean validateFile(Path path) {
+        boolean valid = true;
+        Set<String> keys = new HashSet<>();
+        int lineNum = 0;
+        String previousLine = null;
+
+        try (BufferedReader reader = Files.newBufferedReader(path)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                lineNum++;
+                line = line.trim();
+
+                // Skip empty lines and comments
+                if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
+                    continue;
+                }
+
+                // Check for line continuation (if line ends with '\')
+                if (previousLine != null && previousLine.endsWith("\\")) {
+                    previousLine = line;  // skip validation of this line, as it's a continuation
+                    continue;
+                }
+
+                // Check for key-value format: must contain '=' or ':'
+                if (!line.contains("=") && !line.contains(":")) {
+                    System.err.printf("  [Error] %s Line %d: Missing '=' or ':' -> %s%n", path, lineNum, line);
+                    valid = false;
+                    continue;
+                }
+
+                // Split line by '=' or ':' and validate format
+                String[] parts = line.split("[:=]", 2);
+                if (parts.length != 2) {
+                    System.err.printf("  [Error] %s Line %d: Invalid key-value pair -> %s%n", path, lineNum, line);
+                    valid = false;
+                    continue;
+                }
+
+                // Trim and check for duplicate keys
+                String key = parts[0].trim();
+                if (keys.contains(key)) {
+                    System.err.printf("  [Error] %s Line %d: Duplicate key '%s'%n", path, lineNum, key);
+                    valid = false;
+                } else {
+                    keys.add(key);
+                }
+
+                // Check for trailing backslashes without continuation
+                if (line.endsWith("\\") && !line.endsWith("\\\\")) {
+                    System.err.printf("  [Warning] %s Line %d: Line ends with backslash but no continuation -> %s%n", path, lineNum, line);
+                }
+
+                // Set the previous line for continuation check
+                previousLine = line;
+            }
+        } catch (IOException e) {
+            System.err.println("  [Exception] " + e.getMessage());
+            return false;
+        }
+
+        return valid;
     }
 }
