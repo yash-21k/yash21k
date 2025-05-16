@@ -1,8 +1,84 @@
+import org.junit.jupiter.api.Test;
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-I have reviewed the GPI and GMG data flow jobs.
+public class PropertiesFileValidationTest {
 
-GPI: Only two messages were received, both of which had unsupported message types. As a result, they were blocked by our deduplication data flow job. We expect GPI real-time data to start flowing once the business users begin working with real-time inputs.
+    @Test
+    public void validateAllPropertiesFiles() throws IOException {
+        Path rootDir = Paths.get("src/main/resources"); // <-- adjust if needed
+        List<Path> files = new ArrayList<>();
 
-GMG: We are successfully processing GB and FR messages. These messages are being persisted in both BigQuery and BigTable.
+        Files.walk(rootDir)
+                .filter(p -> p.toString().endsWith(".properties"))
+                .forEach(files::add);
 
+        boolean allValid = true;
+
+        for (Path file : files) {
+            System.out.println("Validating: " + file);
+            boolean valid = validateFile(file);
+            if (!valid) {
+                allValid = false;
+            }
+        }
+
+        assertTrue(allValid, "One or more .properties files have syntax errors.");
+    }
+
+    private boolean validateFile(Path path) {
+        boolean valid = true;
+        Set<String> keys = new HashSet<>();
+        int lineNum = 0;
+
+        try (BufferedReader reader = Files.newBufferedReader(path)) {
+            String line;
+            String previousLine = null;
+
+            while ((line = reader.readLine()) != null) {
+                lineNum++;
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) continue;
+
+                if (previousLine != null && previousLine.endsWith("\\")) {
+                    previousLine = null; // continuation OK
+                    continue;
+                }
+
+                if (!line.contains("=") && !line.contains(":")) {
+                    System.err.printf("  [Error] %s Line %d: No '=' or ':' -> %s%n", path, lineNum, line);
+                    valid = false;
+                    continue;
+                }
+
+                String[] parts = line.split("[:=]", 2);
+                if (parts.length != 2) {
+                    System.err.printf("  [Error] %s Line %d: Invalid key-value -> %s%n", path, lineNum, line);
+                    valid = false;
+                    continue;
+                }
+
+                String key = parts[0].trim();
+                if (keys.contains(key)) {
+                    System.err.printf("  [Error] %s Line %d: Duplicate key '%s'%n", path, lineNum, key);
+                    valid = false;
+                } else {
+                    keys.add(key);
+                }
+
+                if (line.endsWith("\\") && !line.endsWith("\\\\")) {
+                    System.err.printf("  [Warning] %s Line %d ends with backslash. Is it intended? -> %s%n", path, lineNum, line);
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("  [Exception] " + e.getMessage());
+            return false;
+        }
+
+        return valid;
+    }
+}
