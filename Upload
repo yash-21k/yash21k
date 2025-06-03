@@ -11,8 +11,10 @@ public class TextKeywordReplacer {
         String updatedText = text;
 
         for (String keyword : keywords) {
-            if (keyword != null && !keyword.isEmpty() && updatedText.contains(keyword)) {
-                updatedText = updatedText.replace(keyword, "/RETN/");
+            if (keyword != null && !keyword.isEmpty() && !keyword.equals("SPRO")) {
+                if (updatedText.contains(keyword)) {
+                    updatedText = updatedText.replace(keyword, "/RETN/");
+                }
             }
         }
 
@@ -20,8 +22,8 @@ public class TextKeywordReplacer {
     }
 
     public static void main(String[] args) {
-        List<String> keywords = List.of("error", "failure", "timeout");
-        String text = "This error occurred due to a timeout and another failure.";
+        List<String> keywords = List.of("error", "failure", "SPRO", "timeout");
+        String text = "This error occurred due to a timeout, SPRO was unaffected, and another failure.";
         replaceKeywordsInText(text, keywords);
     }
 }
