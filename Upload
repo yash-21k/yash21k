@@ -1,29 +1,14 @@
-import java.util.List;
+import csv
 
-public class TextKeywordReplacer {
+def print_in_clause_from_csv(file_path):
+    values = []
+    with open(file_path, newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            if row:  # skip empty rows
+                values.append(f"'{row[0].strip()}'")
+    in_clause = f"IN({', '.join(values)})"
+    print(in_clause)
 
-    public static void replaceKeywordsInText(String text, List<String> keywords) {
-        if (text == null || keywords == null || keywords.isEmpty()) {
-            System.out.println("No keywords or text to process.");
-            return;
-        }
-
-        String updatedText = text;
-
-        for (String keyword : keywords) {
-            if (keyword != null && !keyword.isEmpty() && !keyword.equals("SPRO")) {
-                if (updatedText.contains(keyword)) {
-                    updatedText = updatedText.replace(keyword, "/RETN/");
-                }
-            }
-        }
-
-        System.out.println("Updated Text: " + updatedText);
-    }
-
-    public static void main(String[] args) {
-        List<String> keywords = List.of("error", "failure", "SPRO", "timeout");
-        String text = "This error occurred due to a timeout, SPRO was unaffected, and another failure.";
-        replaceKeywordsInText(text, keywords);
-    }
-}
+# Example usage:
+print_in_clause_from_csv('your_file.csv')
