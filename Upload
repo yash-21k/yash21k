@@ -1,0 +1,9 @@
+for (TrackerEventType type : TrackerEventType.values()) {
+    if (type.name().equalsIgnoreCase(trackerEventType) &&
+        type.getMessageNameIdentifications().stream()
+            .anyMatch(id -> messageNameIdentification.startsWith(id))) {
+        
+        derivedBDE.getPaymentInfo().setDerivedMessageType(type.getDerivedMessageType());
+        break; // optional: stop at first match
+    }
+}
