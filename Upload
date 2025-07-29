@@ -1,9 +1,53 @@
-for (TrackerEventType type : TrackerEventType.values()) {
-    if (type.name().equalsIgnoreCase(trackerEventType) &&
-        type.getMessageNameIdentifications().stream()
-            .anyMatch(id -> messageNameIdentification.startsWith(id))) {
-        
-        derivedBDE.getPaymentInfo().setDerivedMessageType(type.getDerivedMessageType());
-        break; // optional: stop at first match
+import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.support.PropertiesLoaderUtils;
+
+import java.lang.reflect.Field;
+import java.util.*;
+
+public class MultiEnvironmentPropertyLoadTest {
+
+    // List all your environments and file formats
+    private final List<String> environments = List.of("st", "sit", "sit2", "oat", "prod");
+
+    @Test
+    void testAllEnvironmentProperties() throws Exception {
+        for (String env : environments) {
+            String fileName = String.format("processor-additional-pol_%s_%s_region.properties", env, env);
+            System.out.println("\n🔍 Loading for environment: " + env + "\n------------------");
+
+            Properties props = PropertiesLoaderUtils.loadProperties(new ClassPathResource(fileName));
+
+            // Create instance manually (or use Spring BeanFactory if needed)
+            AMHPOEventsDataflowConfig config = new AMHPOEventsDataflowConfig();
+
+            // Inject values using reflection
+            for (Field field : AMHPOEventsDataflowConfig.class.getDeclaredFields()) {
+                if (field.isAnnotationPresent(Value.class)) {
+                    field.setAccessible(true);
+                    String placeholder = field.getAnnotation(Value.class).value();
+                    String resolvedKey = resolvePlaceholder(placeholder, env);
+
+                    String rawValue = props.getProperty(resolvedKey);
+                    System.out.printf("Property [%s] = %s%n", resolvedKey, rawValue);
+
+                    assert rawValue != null : "Missing value for key: " + resolvedKey;
+
+                    // Optional: Parse rawValue into the appropriate field type (e.g., Map/List) if needed
+                    // For now, just set string value
+                    field.set(config, rawValue);
+                }
+            }
+        }
+    }
+
+    // Simplified: resolves ${profile.key} -> profile.key or similar
+    private String resolvePlaceholder(String placeholder, String env) {
+        // Example: "${${spring.profiles.active}.sourceFields.mapping}"
+        String cleaned = placeholder.replace("${", "").replace("}", "");
+        if (cleaned.contains("${spring.profiles.active}")) {
+            cleaned = cleaned.replace("${spring.profiles.active}", env);
+        }
+        return cleaned;
     }
 }
