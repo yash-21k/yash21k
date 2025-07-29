@@ -1,48 +1,12 @@
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.support.PropertiesLoaderUtils;
+public class ConfigValidationUtil {
 
-import java.lang.reflect.Field;
-import java.util.Properties;
-
-public class AMHPOConfigPropertyLoadTest {
-
-    @Test
-    void testAMHPropertiesAreLoaded() throws Exception {
-        String asset = "amhpo";
-        String fileName = String.format("po-events-processor-additional-%s.properties", asset);
-
-        System.out.println("\n🔍 Loading properties for AMHPO from: " + fileName);
-        Properties props = PropertiesLoaderUtils.loadProperties(new ClassPathResource(fileName));
-
-        // Instantiate your config class
-        AMHPOEventsDataflowConfig configInstance = new AMHPOEventsDataflowConfig();
-
-        for (Field field : AMHPOEventsDataflowConfig.class.getDeclaredFields()) {
-            if (field.isAnnotationPresent(Value.class)) {
-                field.setAccessible(true);
-
-                String placeholder = field.getAnnotation(Value.class).value();
-                String propertyKey = extractPropertyKey(placeholder);
-
-                String rawValue = props.getProperty(propertyKey);
-                System.out.printf("Property [%s] = %s%n", propertyKey, rawValue);
-
-                assert rawValue != null : "Missing value for key: " + propertyKey;
-
-                if (field.getType().equals(String.class)) {
-                    field.set(configInstance, rawValue); // Optional — only if field is String
-                }
+    @SafeVarargs
+    public static boolean validateNonNullMaps(Map<?, ?>... maps) {
+        for (Map<?, ?> map : maps) {
+            if (map == null || map.isEmpty()) {
+                return false;
             }
         }
-    }
-
-    // Utility method to strip "${...}" into just the key
-    private String extractPropertyKey(String placeholder) {
-        if (placeholder.startsWith("${") && placeholder.endsWith("}")) {
-            return placeholder.substring(2, placeholder.length() - 1);
-        }
-        return placeholder;
+        return true;
     }
 }
