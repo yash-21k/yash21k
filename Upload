@@ -1,53 +1,48 @@
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.support.PropertiesLoaderUtils;
 
 import java.lang.reflect.Field;
-import java.util.*;
+import java.util.Properties;
 
-public class MultiEnvironmentPropertyLoadTest {
-
-    // List all your environments and file formats
-    private final List<String> environments = List.of("st", "sit", "sit2", "oat", "prod");
+public class AMHPOConfigPropertyLoadTest {
 
     @Test
-    void testAllEnvironmentProperties() throws Exception {
-        for (String env : environments) {
-            String fileName = String.format("processor-additional-pol_%s_%s_region.properties", env, env);
-            System.out.println("\n🔍 Loading for environment: " + env + "\n------------------");
+    void testAMHPropertiesAreLoaded() throws Exception {
+        String asset = "amhpo";
+        String fileName = String.format("po-events-processor-additional-%s.properties", asset);
 
-            Properties props = PropertiesLoaderUtils.loadProperties(new ClassPathResource(fileName));
+        System.out.println("\n🔍 Loading properties for AMHPO from: " + fileName);
+        Properties props = PropertiesLoaderUtils.loadProperties(new ClassPathResource(fileName));
 
-            // Create instance manually (or use Spring BeanFactory if needed)
-            AMHPOEventsDataflowConfig config = new AMHPOEventsDataflowConfig();
+        // Instantiate your config class
+        AMHPOEventsDataflowConfig configInstance = new AMHPOEventsDataflowConfig();
 
-            // Inject values using reflection
-            for (Field field : AMHPOEventsDataflowConfig.class.getDeclaredFields()) {
-                if (field.isAnnotationPresent(Value.class)) {
-                    field.setAccessible(true);
-                    String placeholder = field.getAnnotation(Value.class).value();
-                    String resolvedKey = resolvePlaceholder(placeholder, env);
+        for (Field field : AMHPOEventsDataflowConfig.class.getDeclaredFields()) {
+            if (field.isAnnotationPresent(Value.class)) {
+                field.setAccessible(true);
 
-                    String rawValue = props.getProperty(resolvedKey);
-                    System.out.printf("Property [%s] = %s%n", resolvedKey, rawValue);
+                String placeholder = field.getAnnotation(Value.class).value();
+                String propertyKey = extractPropertyKey(placeholder);
 
-                    assert rawValue != null : "Missing value for key: " + resolvedKey;
+                String rawValue = props.getProperty(propertyKey);
+                System.out.printf("Property [%s] = %s%n", propertyKey, rawValue);
 
-                    // Optional: Parse rawValue into the appropriate field type (e.g., Map/List) if needed
-                    // For now, just set string value
-                    field.set(config, rawValue);
+                assert rawValue != null : "Missing value for key: " + propertyKey;
+
+                if (field.getType().equals(String.class)) {
+                    field.set(configInstance, rawValue); // Optional — only if field is String
                 }
             }
         }
     }
 
-    // Simplified: resolves ${profile.key} -> profile.key or similar
-    private String resolvePlaceholder(String placeholder, String env) {
-        // Example: "${${spring.profiles.active}.sourceFields.mapping}"
-        String cleaned = placeholder.replace("${", "").replace("}", "");
-        if (cleaned.contains("${spring.profiles.active}")) {
-            cleaned = cleaned.replace("${spring.profiles.active}", env);
+    // Utility method to strip "${...}" into just the key
+    private String extractPropertyKey(String placeholder) {
+        if (placeholder.startsWith("${") && placeholder.endsWith("}")) {
+            return placeholder.substring(2, placeholder.length() - 1);
         }
-        return cleaned;
+        return placeholder;
     }
 }
