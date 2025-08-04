@@ -1,12 +1,9 @@
-public class ConfigValidationUtil {
+Subject: Change Request Details for 09th August PO - Swift GPI Release
 
-    @SafeVarargs
-    public static boolean validateNonNullMaps(Map<?, ?>... maps) {
-        for (Map<?, ?> map : maps) {
-            if (map == null || map.isEmpty()) {
-                return false;
-            }
-        }
-        return true;
-    }
-}
+Email:
+
+Dear Team,
+
+Please find below the details of the Change Requests (CRs) scheduled for the Purchase Order (PO) release on 09th August, pertaining to the Swift GPI initiative.
+
+Kindly review and let me know in case of any queries.
