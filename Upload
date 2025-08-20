@@ -1,0 +1,3 @@
+SELECT *
+FROM your_table
+WHERE REGEXP_CONTAINS(body, r'[\x{3400}-\x{4DBF}\x{4E00}-\x{9FFF}]');
