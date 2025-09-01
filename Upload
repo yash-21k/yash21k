@@ -1,7 +1,1 @@
-We need to migrate all resources from the pdp-payment-observability repository to the pdp-po-resources repository. While most of the resources have already been migrated starting from the SIT environment onwards, a few discrepancies remain due to the existence of two separate self-serve repositories.
-
-Action Required
-
-Review both repositories.
-
-Identify any missing resources in pdp-po-resources.
+l
