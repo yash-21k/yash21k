@@ -1,17 +1,17 @@
 import java.util.regex.*;
 
-public class SingleKeyExtractor {
+public class FromKeyExtractor {
     public static void main(String[] args) {
-        String message = "The generated key is A1B2C3D4E.";
-        
-        // Regex: 8–11 chars, letters or numbers only, must contain at least one letter
-        String regex = "\\b(?=.*[A-Za-z])[A-Za-z0-9]{8,11}\\b";
-        
+        String message = "Transaction completed from A1B2C3D4E successfully.";
+
+        // Simple regex: "from " + 8–11 letters/numbers
+        String regex = "from\\s+([A-Za-z0-9]{8,11})";
+
         Pattern pattern = Pattern.compile(regex);
         Matcher matcher = pattern.matcher(message);
 
         if (matcher.find()) {
-            String key = matcher.group();
+            String key = matcher.group(1); // directly capture the key
             System.out.println("Key found: " + key);
         } else {
             System.out.println("No valid key found.");
