@@ -1,39 +1,20 @@
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit4.SpringRunner;
+import java.util.regex.*;
 
-public class PropertyFileReaderTest {
+public class SingleKeyExtractor {
+    public static void main(String[] args) {
+        String message = "The generated key is A1B2C3D4E.";
+        
+        // Regex: 8–11 chars, letters or numbers only, must contain at least one letter
+        String regex = "\\b(?=.*[A-Za-z])[A-Za-z0-9]{8,11}\\b";
+        
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(message);
 
-    @RunWith(SpringRunner.class)
-    @ContextConfiguration(classes = {AMHPOEventsDataflowConfig.class})
-    @TestPropertySource("classpath:props/app-sit.properties")
-    public static class SitTest {
-        @Test
-        public void testSitConfig() {
-            System.out.println("Running SIT config test");
-            // call your pipeline build/validation logic here
-        }
-    }
-
-    @RunWith(SpringRunner.class)
-    @ContextConfiguration(classes = {AMHPOEventsDataflowConfig.class})
-    @TestPropertySource("classpath:props/app-uat.properties")
-    public static class UatTest {
-        @Test
-        public void testUatConfig() {
-            System.out.println("Running UAT config test");
-        }
-    }
-
-    @RunWith(SpringRunner.class)
-    @ContextConfiguration(classes = {AMHPOEventsDataflowConfig.class})
-    @TestPropertySource("classpath:props/app-prod.properties")
-    public static class ProdTest {
-        @Test
-        public void testProdConfig() {
-            System.out.println("Running PROD config test");
+        if (matcher.find()) {
+            String key = matcher.group();
+            System.out.println("Key found: " + key);
+        } else {
+            System.out.println("No valid key found.");
         }
     }
 }
