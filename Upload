@@ -1,20 +1,5 @@
-import json
+Hi Soumya,
 
-messages = []
+While working on GPSDATA-63587, I extracted a set of Non-Payment Messages received in the SIT environment and observed that the operatingUnit field is being populated with the country code instead of the BIC. Could you please confirm whether we should expect BICs in this field rather than country codes?
 
-with open("your_file.json", "r") as f:
-    for line in f:
-        try:
-            data = json.loads(line)
-            if "message" in data:
-                # Unescape the JSON string inside message
-                try:
-                    msg = json.loads(data["message"])
-                    messages.append(msg)
-                except json.JSONDecodeError:
-                    messages.append(data["message"])
-        except json.JSONDecodeError:
-            continue
-
-for msg in messages:
-    print(msg)
+For reference, I have attached a sample of 50 GPI Non-Payment Messages received in SIT.
