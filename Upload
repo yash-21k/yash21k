@@ -1,5 +1,0 @@
-Hi Soumya,
-
-While working on GPSDATA-63587, I extracted a set of Non-Payment Messages received in the SIT environment and observed that the operatingUnit field is being populated with the country code instead of the BIC. Could you please confirm whether we should expect BICs in this field rather than country codes?
-
-For reference, I have attached a sample of 50 GPI Non-Payment Messages received in SIT.
