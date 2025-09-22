@@ -1,9 +1,20 @@
-import re
+import json
+
+messages = []
 
 with open("your_file.json", "r") as f:
-    content = f.read()
-
-messages = re.findall(r'"message"\s*:\s*"([^"]*)"', content)
+    for line in f:
+        try:
+            data = json.loads(line)
+            if "message" in data:
+                # Unescape the JSON string inside message
+                try:
+                    msg = json.loads(data["message"])
+                    messages.append(msg)
+                except json.JSONDecodeError:
+                    messages.append(data["message"])
+        except json.JSONDecodeError:
+            continue
 
 for msg in messages:
     print(msg)
