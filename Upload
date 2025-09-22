@@ -1,23 +1,22 @@
 import json
-import sys
 import os
 
 def pretty_print(data, indent=2):
     """Pretty print a JSON-compatible structure."""
     print(json.dumps(data, indent=indent, ensure_ascii=False))
 
-def process_log_file(filepath):
+def process_log_file(filepath: str):
     """Process each JSON object in the log and pretty print the 'messages' field."""
     if not os.path.isfile(filepath):
         print(f"❌ File not found: {filepath}")
-        sys.exit(1)
+        return
 
     with open(filepath, "r", encoding="utf-8") as f:
         try:
             data = json.load(f)
         except json.JSONDecodeError as e:
             print(f"❌ JSON decode error: {e}")
-            sys.exit(1)
+            return
 
     # If it's a list of log entries
     if isinstance(data, list):
@@ -25,12 +24,12 @@ def process_log_file(filepath):
             print(f"\n📄 Log Entry [{i}]")
             if "messages" in entry:
                 msg_data = entry["messages"]
-                # Try parsing if it's a string
+                # Try parsing if it's a JSON string
                 if isinstance(msg_data, str):
                     try:
                         msg_data = json.loads(msg_data)
                     except json.JSONDecodeError:
-                        pass  # Leave as string if it fails
+                        pass  # Leave as string if it can't be parsed
                 print("📨 messages:")
                 pretty_print(msg_data)
             else:
@@ -38,12 +37,7 @@ def process_log_file(filepath):
     else:
         print("⚠️ Expected a list of JSON objects at the top level.")
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python print_messages_from_log.py <path_to_json_log_file>")
-        sys.exit(1)
-
-    process_log_file(sys.argv[1])
-
+# Example usage
 if __name__ == "__main__":
-    main()
+    path = "path/to/your/log.json"  # Replace this with your actual path
+    process_log_file(path)
