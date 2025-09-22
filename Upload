@@ -1,45 +1,49 @@
 import json
 import sys
 import os
-from typing import Any
 
-def pretty_print(data: Any, indent: int = 2):
-    """Pretty print any data."""
+def pretty_print(data, indent=2):
+    """Pretty print a JSON-compatible structure."""
     print(json.dumps(data, indent=indent, ensure_ascii=False))
 
-def find_messages_fields(data: Any, path='root'):
-    """Recursively find and print all 'messages' fields."""
-    if isinstance(data, dict):
-        for key, value in data.items():
-            if key == "messages":
-                print(f"\nFound 'messages' at path: {path} → {key}")
-                pretty_print(value)
-            find_messages_fields(value, path + f" → {key}")
-    elif isinstance(data, list):
-        for index, item in enumerate(data):
-            find_messages_fields(item, path + f"[{index}]")
-
-def read_json_file(filepath: str) -> Any:
-    """Read a JSON file and return its content."""
+def process_log_file(filepath):
+    """Process each JSON object in the log and pretty print the 'messages' field."""
     if not os.path.isfile(filepath):
         print(f"❌ File not found: {filepath}")
         sys.exit(1)
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        print(f"❌ Error parsing JSON: {e}")
-        sys.exit(1)
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON decode error: {e}")
+            sys.exit(1)
+
+    # If it's a list of log entries
+    if isinstance(data, list):
+        for i, entry in enumerate(data):
+            print(f"\n📄 Log Entry [{i}]")
+            if "messages" in entry:
+                msg_data = entry["messages"]
+                # Try parsing if it's a string
+                if isinstance(msg_data, str):
+                    try:
+                        msg_data = json.loads(msg_data)
+                    except json.JSONDecodeError:
+                        pass  # Leave as string if it fails
+                print("📨 messages:")
+                pretty_print(msg_data)
+            else:
+                print("⚠️ No 'messages' field found.")
+    else:
+        print("⚠️ Expected a list of JSON objects at the top level.")
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python print_messages_from_json.py <path_to_json_file>")
+        print("Usage: python print_messages_from_log.py <path_to_json_log_file>")
         sys.exit(1)
 
-    filepath = sys.argv[1]
-    data = read_json_file(filepath)
-    print("🔍 Searching for 'messages' fields...")
-    find_messages_fields(data)
+    process_log_file(sys.argv[1])
 
 if __name__ == "__main__":
     main()
