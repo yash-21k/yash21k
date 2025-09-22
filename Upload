@@ -1,43 +1,9 @@
-import json
-import os
+import re
 
-def pretty_print(data, indent=2):
-    """Pretty print a JSON-compatible structure."""
-    print(json.dumps(data, indent=indent, ensure_ascii=False))
+with open("your_file.json", "r") as f:
+    content = f.read()
 
-def process_log_file(filepath: str):
-    """Process each JSON object in the log and pretty print the 'messages' field."""
-    if not os.path.isfile(filepath):
-        print(f"❌ File not found: {filepath}")
-        return
+messages = re.findall(r'"message"\s*:\s*"([^"]*)"', content)
 
-    with open(filepath, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON decode error: {e}")
-            return
-
-    # If it's a list of log entries
-    if isinstance(data, list):
-        for i, entry in enumerate(data):
-            print(f"\n📄 Log Entry [{i}]")
-            if "messages" in entry:
-                msg_data = entry["messages"]
-                # Try parsing if it's a JSON string
-                if isinstance(msg_data, str):
-                    try:
-                        msg_data = json.loads(msg_data)
-                    except json.JSONDecodeError:
-                        pass  # Leave as string if it can't be parsed
-                print("📨 messages:")
-                pretty_print(msg_data)
-            else:
-                print("⚠️ No 'messages' field found.")
-    else:
-        print("⚠️ Expected a list of JSON objects at the top level.")
-
-# Example usage
-if __name__ == "__main__":
-    path = "path/to/your/log.json"  # Replace this with your actual path
-    process_log_file(path)
+for msg in messages:
+    print(msg)
