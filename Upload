@@ -3,17 +3,13 @@ import csv
 # 👇 Set your file paths here
 file1 = "path/to/file1.csv"
 file2 = "path/to/file2.csv"
-output_file = "path/to/output.csv"
 
-with open(file1, 'r', newline='') as f1, open(file2, 'r', newline='') as f2, open(output_file, 'w', newline='') as out:
+with open(file1, 'r', newline='') as f1, open(file2, 'r', newline='') as f2:
     reader1 = csv.reader(f1)
     reader2 = csv.reader(f2)
-    writer = csv.writer(out)
 
     for row1, row2 in zip(reader1, reader2):
         if not row1 or not row2:
             continue  # skip empty rows
         combined_value = f"'{row1[0]}#{row2[0]}'"
-        writer.writerow([combined_value])
-
-print(f"✅ Done! Output written to: {output_file}")
+        print(combined_value)
