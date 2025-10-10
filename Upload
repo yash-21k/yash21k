@@ -1,21 +1,20 @@
-import csv
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
-# 👇 Set your file paths here
-file1 = "path/to/file1.csv"
-file2 = "path/to/file2.csv"
+public class RfiStatusRegex {
 
-results = []
+    // ✅ Precompiled regex pattern (case-insensitive & flexible spacing)
+    public static final Pattern RFI_IN_PROGRESS_PATTERN =
+            Pattern.compile("(?i)^RFI\\s+In\\s+Progress\\s*\\(Awaiting\\s+response\\s+from\\s+RM\\s*/\\s*Clients\\)$");
 
-with open(file1, 'r', newline='') as f1, open(file2, 'r', newline='') as f2:
-    reader1 = csv.reader(f1)
-    reader2 = csv.reader(f2)
+    public static void main(String[] args) {
+        String input = "RFI In Progress (Awaiting response from RM /Clients)";
 
-    for row1, row2 in zip(reader1, reader2):
-        if not row1 or not row2:
-            continue  # skip empty rows
-        value1 = row1[0].strip()
-        value2 = row2[0].strip()
-        results.append(f"'{value1}#{value2}'")
-
-# Print all results comma-separated
-print(",".join(results))
+        Matcher matcher = RFI_IN_PROGRESS_PATTERN.matcher(input);
+        if (matcher.matches()) {
+            System.out.println("✅ The string matches the pattern!");
+        } else {
+            System.out.println("❌ The string does NOT match the pattern.");
+        }
+    }
+}
