@@ -1,85 +1,33 @@
-import static org.junit.jupiter.api.Assertions.*;
+// ✅ Match case type and substatus
+boolean matchesBaseConditions =
+        equalsIgnoreCaseSafe(investigationCaseType,
+                gpiDataHolder.getGPIDetails().getTransactionInfo().getGPIInvestigationCaseType()) &&
+        equalsIgnoreCaseSafe(assetSubStatus,
+                gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetSubstatus());
 
-import org.junit.jupiter.api.Test;
-import java.util.List;
-import java.util.Map;
+// ✅ If third keyword exists, match it; else skip
+boolean matchesAssetStatus = true;  // default to true
+if (conditions.size() > 2 && assetStatus != null) {
+    matchesAssetStatus = equalsIgnoreCaseSafe(assetStatus,
+            gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetStatus());
+}
 
-class AssetStatusDescStpMappingTest {
+if (matchesBaseConditions && matchesAssetStatus) {
+    String expectedStatus = expectedValues.get("assetStatusDesc");
+    String expectedStp = expectedValues.get("stp");
 
-    @Test
-    void testAssetStatusDescAndStpTransformation() {
+    gpiToBDETransformer.populateStpAndAssetStatusDesc(
+            gpiDataHolder,
+            headerEnrichedPymtTransaction.getTrace_id(),
+            messageHeader,
+            expectedStatus
+    );
 
-        // ✅ Load the mapping from property file or config loader
-        Map<List<String>, Map<String, String>> assetStatusDescStpMapping =
-                PropertyFileLoader.loadConfigMap();  // Replace with your actual loader
+    assertEquals(expectedStatus,
+            derivedBDE.getPaymentEvent().getAssetStatusDescription(),
+            "Asset Status Description mismatch for conditions: " + conditions);
 
-        assertNotNull(assetStatusDescStpMapping, "Mapping should not be null");
-        assertFalse(assetStatusDescStpMapping.isEmpty(), "Mapping should not be empty");
-
-        for (Map.Entry<List<String>, Map<String, String>> entry : assetStatusDescStpMapping.entrySet()) {
-
-            List<String> conditions = entry.getKey();
-            Map<String, String> expectedValues = entry.getValue();
-
-            // ✅ Safely extract values from the condition list
-            String investigationCaseType = getConditionValue(conditions, 0);  // or 8 if required
-            String assetSubStatus = getConditionValue(conditions, 1);
-            String assetStatus = getConditionValue(conditions, 2); // might be null for 2-element lists
-
-            // ✅ Populate the GPI Data Holder
-            gpiDataHolder.getGPIDetails().getTransactionInfo()
-                    .setGPIInvestigationCaseType(investigationCaseType);
-            gpiDataHolder.getGPIDetails().getTransactionInfo()
-                    .setAssetSubstatus(assetSubStatus);
-            gpiDataHolder.getGPIDetails().getTransactionInfo()
-                    .setAssetStatus(assetStatus);
-
-            // ✅ Check matching conditions
-            boolean matchesBaseConditions =
-                    equalsIgnoreCaseSafe(investigationCaseType,
-                            gpiDataHolder.getGPIDetails().getTransactionInfo().getGPIInvestigationCaseType()) &&
-                    equalsIgnoreCaseSafe(assetSubStatus,
-                            gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetSubstatus());
-
-            boolean matchesAssetStatus =
-                    (conditions.size() <= 2) ||
-                    equalsIgnoreCaseSafe(assetStatus,
-                            gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetStatus());
-
-            if (matchesBaseConditions && matchesAssetStatus) {
-                // ✅ Expected values from mapping
-                String expectedStatus = expectedValues.get("assetStatusDesc");
-                String expectedStp = expectedValues.get("stp");
-
-                // ✅ Run the transformation logic
-                gpiToBDETransformer.populateStpAndAssetStatusDesc(
-                        gpiDataHolder,
-                        headerEnrichedPymtTransaction.getTrace_id(),
-                        messageHeader,
-                        expectedStatus
-                );
-
-                // ✅ Assertions
-                assertEquals(expectedStatus,
-                        derivedBDE.getPaymentEvent().getAssetStatusDescription(),
-                        "Asset Status Description mismatch for conditions: " + conditions);
-
-                assertEquals(expectedStp,
-                        derivedBDE.getPaymentInfo().getStpPayment(),
-                        "STP value mismatch for conditions: " + conditions);
-            }
-        }
-    }
-
-    // 🔹 Helper: Safe list access
-    private String getConditionValue(List<String> conditions, int index) {
-        return (conditions != null && conditions.size() > index) ? conditions.get(index) : null;
-    }
-
-    // 🔹 Helper: Null-safe, case-insensitive comparison
-    private boolean equalsIgnoreCaseSafe(String a, String b) {
-        if (a == null && b == null) return true;
-        if (a == null || b == null) return false;
-        return a.equalsIgnoreCase(b);
-    }
+    assertEquals(expectedStp,
+            derivedBDE.getPaymentInfo().getStpPayment(),
+            "STP value mismatch for conditions: " + conditions);
 }
