@@ -1,33 +1,30 @@
-// ✅ Match case type and substatus
-boolean matchesBaseConditions =
-        equalsIgnoreCaseSafe(investigationCaseType,
-                gpiDataHolder.getGPIDetails().getTransactionInfo().getGPIInvestigationCaseType()) &&
-        equalsIgnoreCaseSafe(assetSubStatus,
-                gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetSubstatus());
+import pandas as pd
 
-// ✅ If third keyword exists, match it; else skip
-boolean matchesAssetStatus = true;  // default to true
-if (conditions.size() > 2 && assetStatus != null) {
-    matchesAssetStatus = equalsIgnoreCaseSafe(assetStatus,
-            gpiDataHolder.getGPIDetails().getTransactionInfo().getAssetStatus());
-}
+def extract_excel_values(file_path, sheet_name):
+    # Read the Excel sheet without headers
+    df = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
 
-if (matchesBaseConditions && matchesAssetStatus) {
-    String expectedStatus = expectedValues.get("assetStatusDesc");
-    String expectedStp = expectedValues.get("stp");
+    # Loop through rows 2 to 60 (Excel rows are 1-indexed, pandas is 0-indexed)
+    for i in range(1, 60):
+        # Skip rows that don't exist
+        if i >= len(df):
+            break
 
-    gpiToBDETransformer.populateStpAndAssetStatusDesc(
-            gpiDataHolder,
-            headerEnrichedPymtTransaction.getTrace_id(),
-            messageHeader,
-            expectedStatus
-    );
+        # Extract B, C, D, and E values (columns 1–4)
+        b = df.iloc[i, 1]
+        c = df.iloc[i, 2]
+        d = df.iloc[i, 3]
+        e = df.iloc[i, 4]
 
-    assertEquals(expectedStatus,
-            derivedBDE.getPaymentEvent().getAssetStatusDescription(),
-            "Asset Status Description mismatch for conditions: " + conditions);
+        # Skip empty rows
+        if pd.isna(b) and pd.isna(c) and pd.isna(d) and pd.isna(e):
+            continue
 
-    assertEquals(expectedStp,
-            derivedBDE.getPaymentInfo().getStpPayment(),
-            "STP value mismatch for conditions: " + conditions);
-}
+        # Format output
+        print(f"{{'{b}', '{c}', '{d}'}} : '{e}'")
+
+# Example usage
+if __name__ == "__main__":
+    file_path = input("Enter Excel file path: ").strip()
+    sheet_name = input("Enter sheet name: ").strip()
+    extract_excel_values(file_path, sheet_name)
