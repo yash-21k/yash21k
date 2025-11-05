@@ -1,12 +1,17 @@
 import pandas as pd
 
-def extract_excel_values(file_path, sheet_name):
+def extract_excel_values():
+    # --- 🔧 Set your file path and sheet name here ---
+    file_path = "C:/Users/YourName/Documents/your_file.xlsx"   # 👈 update this path
+    sheet_name = "Sheet1"                                      # 👈 update this sheet name
+    # -------------------------------------------------
+
     # Read the Excel sheet without headers
     df = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
 
     # Loop through rows 2 to 60 (Excel rows are 1-indexed, pandas is 0-indexed)
     for i in range(1, 60):
-        # Skip rows that don't exist
+        # Stop if row exceeds available data
         if i >= len(df):
             break
 
@@ -16,15 +21,13 @@ def extract_excel_values(file_path, sheet_name):
         d = df.iloc[i, 3]
         e = df.iloc[i, 4]
 
-        # Skip empty rows
+        # Skip completely empty rows
         if pd.isna(b) and pd.isna(c) and pd.isna(d) and pd.isna(e):
             continue
 
-        # Format output
+        # Format and print output
         print(f"{{'{b}', '{c}', '{d}'}} : '{e}'")
 
-# Example usage
+# Run function
 if __name__ == "__main__":
-    file_path = input("Enter Excel file path: ").strip()
-    sheet_name = input("Enter sheet name: ").strip()
-    extract_excel_values(file_path, sheet_name)
+    extract_excel_values()
