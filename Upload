@@ -2,57 +2,58 @@ import json
 import csv
 import os
 
-# === File paths (edit these) ===
-json_file_path = "sample.json"
-csv1_path = "file1.csv"
-csv2_path = "file2.csv"
-csv3_path = "file3.csv"
-output_folder = "output_jsons"
+# === File paths (edit these as needed) ===
+json_file_path = r"C:\Users\Yash\Desktop\data\sample.json"
+csv1_path = r"C:\Users\Yash\Desktop\data\file1.csv"
+csv2_path = r"C:\Users\Yash\Desktop\data\file2.csv"
+csv3_path = r"C:\Users\Yash\Desktop\data\file3.csv"
+output_folder = r"C:\Users\Yash\Desktop\data\output_jsons"
 
 # === Create output folder if not exists ===
 os.makedirs(output_folder, exist_ok=True)
 
-# === Load CSV values ===
+# === Load CSV values (first column only) ===
 def load_csv_values(csv_path):
-    with open(csv_path, newline='', encoding='utf-8') as f:
+    with open(csv_path, mode="r", encoding="utf-8") as f:
         reader = csv.reader(f)
-        return [row[0] for row in reader if row]  # take first column
+        return [row[0] for row in reader if row]
 
 values1 = load_csv_values(csv1_path)
 values2 = load_csv_values(csv2_path)
 values3 = load_csv_values(csv3_path)
 
-# === Load the base JSON ===
-with open(json_file_path, "r", encoding="utf-8") as f:
+# === Load the base JSON file ===
+with open(json_file_path, mode="r", encoding="utf-8") as f:
     base_json = json.load(f)
 
-# === Process and save new JSONs ===
+# === Replace fields and save new JSONs ===
 for i in range(min(len(values1), len(values2), len(values3))):
-    new_json = json.loads(json.dumps(base_json))  # deep copy
+    # make a deep copy of the base JSON
+    new_json = json.loads(json.dumps(base_json))
     
-    # Replace values
+    # recursive replace function
     def replace_fields(obj):
         if isinstance(obj, dict):
-            for k, v in obj.items():
-                if k == "field1":
-                    obj[k] = values1[i]
-                elif k == "field2":
-                    obj[k] = values2[i]
-                elif k == "field3":
-                    obj[k] = values3[i]
+            for key, val in obj.items():
+                if key == "field1":
+                    obj[key] = values1[i]
+                elif key == "field2":
+                    obj[key] = values2[i]
+                elif key == "field3":
+                    obj[key] = values3[i]
                 else:
-                    replace_fields(v)
+                    replace_fields(val)
         elif isinstance(obj, list):
             for item in obj:
                 replace_fields(item)
-    
+
     replace_fields(new_json)
-    
-    # Save new file
+
+    # save new JSON file
     output_path = os.path.join(output_folder, f"output_{i+1}.json")
-    with open(output_path, "w", encoding="utf-8") as out:
-        json.dump(new_json, out, indent=4, ensure_ascii=False)
+    with open(output_path, mode="w", encoding="utf-8") as f_out:
+        json.dump(new_json, f_out, indent=4, ensure_ascii=False)
 
     print(f"✅ Created: {output_path}")
 
-print("All JSON files generated successfully.")
+print("\nAll JSON files generated successfully.")
