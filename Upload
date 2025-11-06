@@ -1,32 +1,58 @@
-import pandas as pd
+import json
+import csv
+import os
 
-def extract_excel_values():
-    # --- 🔧 Set your file path and sheet name here ---
-    file_path = "C:/Users/YourName/Documents/your_file.xlsx"   # 👈 update this
-    sheet_name = "Sheet1"                                      # 👈 update this
-    # -------------------------------------------------
+# === File paths (edit these) ===
+json_file_path = "sample.json"
+csv1_path = "file1.csv"
+csv2_path = "file2.csv"
+csv3_path = "file3.csv"
+output_folder = "output_jsons"
 
-    # Read the Excel sheet without headers
-    df = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
+# === Create output folder if not exists ===
+os.makedirs(output_folder, exist_ok=True)
 
-    # Loop through rows 2 to 60 (Excel is 1-indexed, pandas is 0-indexed)
-    for i in range(1, 60):
-        if i >= len(df):
-            break
+# === Load CSV values ===
+def load_csv_values(csv_path):
+    with open(csv_path, newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        return [row[0] for row in reader if row]  # take first column
 
-        # Extract B, C, D, and F values
-        b = df.iloc[i, 1]
-        c = df.iloc[i, 2]
-        d = df.iloc[i, 3]
-        f = df.iloc[i, 5]
+values1 = load_csv_values(csv1_path)
+values2 = load_csv_values(csv2_path)
+values3 = load_csv_values(csv3_path)
 
-        # Skip empty rows
-        if pd.isna(b) and pd.isna(c) and pd.isna(d) and pd.isna(f):
-            continue
+# === Load the base JSON ===
+with open(json_file_path, "r", encoding="utf-8") as f:
+    base_json = json.load(f)
 
-        # Print with escaped backslashes
-        print(f"{{'{b}', '{c}', '{d}'}} : {{\\\n'assetStatusDesc' : '{f}',\\\n'stp' : 'N'\\\n}}")
+# === Process and save new JSONs ===
+for i in range(min(len(values1), len(values2), len(values3))):
+    new_json = json.loads(json.dumps(base_json))  # deep copy
+    
+    # Replace values
+    def replace_fields(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k == "field1":
+                    obj[k] = values1[i]
+                elif k == "field2":
+                    obj[k] = values2[i]
+                elif k == "field3":
+                    obj[k] = values3[i]
+                else:
+                    replace_fields(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                replace_fields(item)
+    
+    replace_fields(new_json)
+    
+    # Save new file
+    output_path = os.path.join(output_folder, f"output_{i+1}.json")
+    with open(output_path, "w", encoding="utf-8") as out:
+        json.dump(new_json, out, indent=4, ensure_ascii=False)
 
-# Run function
-if __name__ == "__main__":
-    extract_excel_values()
+    print(f"✅ Created: {output_path}")
+
+print("All JSON files generated successfully.")
