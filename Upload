@@ -1,59 +1,14 @@
-import json
-import csv
-import os
-
-# === File paths (edit these as needed) ===
-json_file_path = r"C:\Users\Yash\Desktop\data\sample.json"
-csv1_path = r"C:\Users\Yash\Desktop\data\file1.csv"
-csv2_path = r"C:\Users\Yash\Desktop\data\file2.csv"
-csv3_path = r"C:\Users\Yash\Desktop\data\file3.csv"
-output_folder = r"C:\Users\Yash\Desktop\data\output_jsons"
-
-# === Create output folder if not exists ===
-os.makedirs(output_folder, exist_ok=True)
-
-# === Load CSV values (first column only) ===
-def load_csv_values(csv_path):
-    with open(csv_path, mode="r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        return [row[0] for row in reader if row]
-
-values1 = load_csv_values(csv1_path)
-values2 = load_csv_values(csv2_path)
-values3 = load_csv_values(csv3_path)
-
-# === Load the base JSON file ===
-with open(json_file_path, mode="r", encoding="utf-8") as f:
-    base_json = json.load(f)
-
-# === Replace fields and save new JSONs ===
-for i in range(min(len(values1), len(values2), len(values3))):
-    # make a deep copy of the base JSON
-    new_json = json.loads(json.dumps(base_json))
-    
-    # recursive replace function
-    def replace_fields(obj):
-        if isinstance(obj, dict):
-            for key, val in obj.items():
-                if key == "field1":
-                    obj[key] = values1[i]
-                elif key == "field2":
-                    obj[key] = values2[i]
-                elif key == "field3":
-                    obj[key] = values3[i]
-                else:
-                    replace_fields(val)
-        elif isinstance(obj, list):
-            for item in obj:
-                replace_fields(item)
-
-    replace_fields(new_json)
-
-    # save new JSON file
-    output_path = os.path.join(output_folder, f"output_{i+1}.json")
-    with open(output_path, mode="w", encoding="utf-8") as f_out:
-        json.dump(new_json, f_out, indent=4, ensure_ascii=False)
-
-    print(f"✅ Created: {output_path}")
-
-print("\nAll JSON files generated successfully.")
+with open("filename.txt", "rb") as f:
+    first_bytes = f.read(4)
+    if first_bytes.startswith(b'\xef\xbb\xbf'):
+        print("UTF-8 BOM found")
+    elif first_bytes.startswith(b'\xff\xfe'):
+        print("UTF-16 LE BOM found")
+    elif first_bytes.startswith(b'\xfe\xff'):
+        print("UTF-16 BE BOM found")
+    elif first_bytes.startswith(b'\xff\xfe\x00\x00'):
+        print("UTF-32 LE BOM found")
+    elif first_bytes.startswith(b'\x00\x00\xfe\xff'):
+        print("UTF-32 BE BOM found")
+    else:
+        print("No BOM found")
