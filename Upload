@@ -1,3 +1,10 @@
-While preparing the resources for the PDP PO as part of the 6th December release, we identified unexpected changes in the plan. These appear to have occurred due to certain permissions that were granted to specific accounts. As a result, we are currently blocked from proceeding with the infra CR creation.
+import java.util.regex.*;
 
-Given that we have our CAB call scheduled for tomorrow, could you please confirm whether this needs to be taken forward for the upcoming 6th December production release?
+public static String extractRefValue(String input) {
+    if (input == null) return null;
+
+    Pattern p = Pattern.compile("REF:\\s*([^\\s/]+)");
+    Matcher m = p.matcher(input);
+
+    return m.find() ? m.group(1) : null;
+}
