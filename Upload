@@ -1,9 +1,17 @@
-const interval = setInterval(() => {
-  const nextBtn = document.querySelector('button:not([disabled])');
+const waitForVideoAndClick = () => {
+  const video = document.querySelector('video');
+  const nextBtn = document.querySelector('button#submit');
 
-  if (nextBtn && nextBtn.innerText.toLowerCase().includes('next')) {
-    console.log('Next button enabled, clicking...');
+  if (!video || !nextBtn) {
+    console.log('Waiting for video or Next button...');
+    return;
+  }
+
+  if (video.ended) {
+    console.log('Video completed → clicking NEXT');
     nextBtn.click();
     clearInterval(interval);
   }
-}, 1000);
+};
+
+const interval = setInterval(waitForVideoAndClick, 2000);
