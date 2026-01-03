@@ -1,10 +1,9 @@
-import java.util.regex.*;
+const interval = setInterval(() => {
+  const nextBtn = document.querySelector('button:not([disabled])');
 
-public static String extractRefValue(String input) {
-    if (input == null) return null;
-
-    Pattern p = Pattern.compile("REF:\\s*([^\\s/]+)");
-    Matcher m = p.matcher(input);
-
-    return m.find() ? m.group(1) : null;
-}
+  if (nextBtn && nextBtn.innerText.toLowerCase().includes('next')) {
+    console.log('Next button enabled, clicking...');
+    nextBtn.click();
+    clearInterval(interval);
+  }
+}, 1000);
