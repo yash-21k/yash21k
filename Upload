@@ -1,17 +1,4 @@
-const waitForVideoAndClick = () => {
-  const video = document.querySelector('video');
-  const nextBtn = document.querySelector('button#submit');
-
-  if (!video || !nextBtn) {
-    console.log('Waiting for video or Next button...');
-    return;
-  }
-
-  if (video.ended) {
-    console.log('Video completed → clicking NEXT');
-    nextBtn.click();
-    clearInterval(interval);
-  }
-};
-
-const interval = setInterval(waitForVideoAndClick, 2000);
+setInterval(() => {
+  const v = document.querySelector('video');
+  if (v && v.paused) v.play();
+}, 3000);
