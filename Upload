@@ -1,4 +1,5 @@
-setInterval(() => {
-  const v = document.querySelector('video');
-  if (v && v.paused) v.play();
-}, 3000);
+document.querySelectorAll('*').forEach(el => {
+  el.oncontextmenu = null;
+  el.onmousedown = null;
+  el.onmouseup = null;
+});
