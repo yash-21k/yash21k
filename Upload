@@ -1,5 +1,28 @@
-document.querySelectorAll('*').forEach(el => {
-  el.oncontextmenu = null;
-  el.onmousedown = null;
-  el.onmouseup = null;
-});
+import csv
+
+def print_pairs(csv1_path, csv2_path):
+    list1 = []
+    list2 = []
+
+    # Read first CSV
+    with open(csv1_path, newline='', encoding='utf-8') as f1:
+        reader = csv.reader(f1)
+        for row in reader:
+            for item in row:
+                list1.append(item.strip())
+
+    # Read second CSV
+    with open(csv2_path, newline='', encoding='utf-8') as f2:
+        reader = csv.reader(f2)
+        for row in reader:
+            for item in row:
+                list2.append(item.strip())
+
+    # Pair and print
+    for a, b in zip(list1, list2):
+        print(f"'{a}' : '{b}', \\")
+
+# Example usage
+csv1_file = "csv1.csv"
+csv2_file = "csv2.csv"
+print_pairs(csv1_file, csv2_file)
