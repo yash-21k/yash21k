@@ -1,28 +1,19 @@
-import csv
+Our transformer creates a list where message-related objects are stored in the same order they are added.
 
-def print_pairs(csv1_path, csv2_path):
-    list1 = []
-    list2 = []
+Normally, only one object is present in the list. This first object represents the main message, and its system name is AMH.
 
-    # Read first CSV
-    with open(csv1_path, newline='', encoding='utf-8') as f1:
-        reader = csv.reader(f1)
-        for row in reader:
-            for item in row:
-                list1.append(item.strip())
+The RawPayload logic was written to pick the last object from the list using (list size − 1). Since there was only one object earlier, this always pointed to the main message correctly.
 
-    # Read second CSV
-    with open(csv2_path, newline='', encoding='utf-8') as f2:
-        reader = csv.reader(f2)
-        for row in reader:
-            for item in row:
-                list2.append(item.strip())
+What changed:
 
-    # Pair and print
-    for a, b in zip(list1, list2):
-        print(f"'{a}' : '{b}', \\")
+For dummy events, we now add one more object to the list.
 
-# Example usage
-csv1_file = "csv1.csv"
-csv2_file = "csv2.csv"
-print_pairs(csv1_file, csv2_file)
+So the list now contains:
+
+First object → Main message (System Name: AMH)
+
+Second object → Dummy event (System Name: SWIFT GPI GCCT)
+
+Because the RawPayload logic always selects the last object, it started picking the second (dummy event) object instead of the main message.
+
+Result:The AMH RECEIVED_FROM_SWIFT payload was incorrectly tagged with the system name SWIFT GPI GCCT instead of AMH, since the system started reading the dummy event entry rather than the main message entry
