@@ -10,7 +10,6 @@ class Solution {
         int n = nodeval.length;
         values = nodeval;
 
-        // Build adjacency list
         adj = new ArrayList<>();
         for (int i = 0; i < n; i++)
             adj.add(new ArrayList<>());
@@ -22,11 +21,10 @@ class Solution {
             adj.get(v).add(u);
         }
 
-        dfs(0, -1); // root = node 1
+        dfs(0, -1);
         return (int) maxAnswer;
     }
 
-    // returns {maxDown, minDown}
     private long[] dfs(int node, int parent) {
         boolean isLeaf = true;
 
@@ -43,12 +41,10 @@ class Solution {
             childrenResults.add(child);
         }
 
-        // leaf node
         if (isLeaf) {
             return new long[]{values[node], values[node]};
         }
 
-        // best downward paths
         for (long[] child : childrenResults) {
             long c1 = child[0] * values[node];
             long c2 = child[1] * values[node];
@@ -57,10 +53,7 @@ class Solution {
             minDown = Math.min(minDown, Math.min(c1, c2));
         }
 
-        // ⭐ FIX: consider single downward path also
-        maxAnswer = Math.max(maxAnswer, maxDown);
-
-        // combine two child paths (leaf-to-leaf through this node)
+        // Only leaf-to-leaf paths
         if (childrenResults.size() >= 2) {
             for (int i = 0; i < childrenResults.size(); i++) {
                 for (int j = i + 1; j < childrenResults.size(); j++) {
@@ -88,9 +81,8 @@ class Solution {
 
         Solution sol = new Solution();
 
-        // TEST CASE 1 (Expected: 2400)
+        // Test Case 1 → Expected 2400
         int[] nodeval = {2, 5, 8, 1, 3, 10, 4};
-
         int[][] edges = {
             {1, 2},
             {1, 3},
@@ -100,7 +92,20 @@ class Solution {
             {3, 7}
         };
 
-        int result = sol.maxscore(nodeval, edges);
-        System.out.println(result);
+        System.out.println(sol.maxscore(nodeval, edges));
+
+        // Test Case 2 → Expected 75
+        int[] nodeval2 = {2, 5, 0, 1, 3, 10, -4, 5};
+        int[][] edges2 = {
+            {1, 2},
+            {1, 3},
+            {2, 4},
+            {2, 5},
+            {3, 6},
+            {3, 7},
+            {4, 8}
+        };
+
+        System.out.println(sol.maxscore(nodeval2, edges2));
     }
 }
