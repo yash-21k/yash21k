@@ -1,119 +1,109 @@
+import java.util.*;
+
 class Solution {
 
-    static long answer;
+    int maxAnswer = Integer.MIN_VALUE;
+    List<List<Integer>> adj;
+    int[] values;
 
     public int maxscore(int nodeval[], int[][] edges) {
-
         int n = nodeval.length;
+        values = nodeval;
 
-        // ----- build adjacency list using arrays -----
-        int[] degree = new int[n];
-
-        for (int[] e : edges) {
-            degree[e[0]-1]++;
-            degree[e[1]-1]++;
-        }
-
-        int[][] adj = new int[n][];
+        // Build adjacency list
+        adj = new ArrayList<>();
         for (int i = 0; i < n; i++)
-            adj[i] = new int[degree[i]];
-
-        int[] idx = new int[n];
+            adj.add(new ArrayList<>());
 
         for (int[] e : edges) {
-            int u = e[0]-1, v = e[1]-1;
-
-            adj[u][idx[u]++] = v;
-            adj[v][idx[v]++] = u;
+            int u = e[0] - 1;
+            int v = e[1] - 1;
+            adj.get(u).add(v);
+            adj.get(v).add(u);
         }
 
-        answer = Long.MIN_VALUE;
-
-        dfs(0, -1, nodeval, adj);
-
-        return (int)answer;
+        dfs(0, -1); // root = node 1 (index 0)
+        return maxAnswer;
     }
 
     // returns {maxDown, minDown}
-    static long[] dfs(int node, int parent, int[] val, int[][] adj) {
-
+    private long[] dfs(int node, int parent) {
         boolean isLeaf = true;
 
         long maxDown = Long.MIN_VALUE;
         long minDown = Long.MAX_VALUE;
 
-        long[] childMax = new long[adj[node].length];
-        long[] childMin = new long[adj[node].length];
+        List<long[]> childrenResults = new ArrayList<>();
 
-        int count = 0;
-
-        for (int next : adj[node]) {
-
-            if (next == parent) continue;
+        for (int nei : adj.get(node)) {
+            if (nei == parent) continue;
 
             isLeaf = false;
-
-            long[] child = dfs(next, node, val, adj);
-
-            long a = child[0] * val[node];
-            long b = child[1] * val[node];
-
-            childMax[count] = Math.max(a, b);
-            childMin[count] = Math.min(a, b);
-
-            maxDown = Math.max(maxDown, childMax[count]);
-            minDown = Math.min(minDown, childMin[count]);
-
-            count++;
+            long[] child = dfs(nei, node);
+            childrenResults.add(child);
         }
 
-        // leaf
+        // leaf node
         if (isLeaf) {
-            return new long[]{val[node], val[node]};
+            return new long[]{values[node], values[node]};
         }
 
-        // combine children pairs for leaf-to-leaf
-        for (int i = 0; i < count; i++) {
-            for (int j = i + 1; j < count; j++) {
+        // compute best downward paths
+        for (long[] child : childrenResults) {
+            long c1 = child[0] * values[node];
+            long c2 = child[1] * values[node];
 
-                long[] cand = {
-                        (long)val[node] * childMax[i] * childMax[j],
-                        (long)val[node] * childMax[i] * childMin[j],
-                        (long)val[node] * childMin[i] * childMax[j],
-                        (long)val[node] * childMin[i] * childMin[j]
-                };
+            maxDown = Math.max(maxDown, Math.max(c1, c2));
+            minDown = Math.min(minDown, Math.min(c1, c2));
+        }
 
-                for (long c : cand)
-                    answer = Math.max(answer, c);
+        // combine two child branches to form leaf-to-leaf path
+        if (childrenResults.size() >= 2) {
+            for (int i = 0; i < childrenResults.size(); i++) {
+                for (int j = i + 1; j < childrenResults.size(); j++) {
+                    long[] a = childrenResults.get(i);
+                    long[] b = childrenResults.get(j);
+
+                    long[] candidates = {
+                        a[0] * b[0] * values[node],
+                        a[0] * b[1] * values[node],
+                        a[1] * b[0] * values[node],
+                        a[1] * b[1] * values[node]
+                    };
+
+                    for (long val : candidates) {
+                        maxAnswer = Math.max(maxAnswer, (int) val);
+                    }
+                }
             }
         }
 
         return new long[]{maxDown, minDown};
     }
 
-    // ---- MAIN FUNCTION WITH EXAMPLE INPUT ----
+    // FULL INPUT-BASED MAIN FUNCTION (for judge/platform)
     public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+
+        int num = sc.nextInt(); // number of nodes
+
+        int[] nodeval = new int[num];
+        for (int i = 0; i < num; i++) {
+            nodeval[i] = sc.nextInt();
+        }
+
+        int numEdges = sc.nextInt(); // E
+        int numNodes = sc.nextInt(); // always 2 (ignored)
+
+        int[][] edges = new int[numEdges][2];
+        for (int i = 0; i < numEdges; i++) {
+            edges[i][0] = sc.nextInt();
+            edges[i][1] = sc.nextInt();
+        }
 
         Solution sol = new Solution();
-
-        // Example:
-        // Node values:
-        // 1 -> -1
-        // 2 -> 2
-        // 3 -> 3
-        // 4 -> 2
-        int[] nodeval = {-1, 2, 3, 2};
-
-        // Edges:
-        // 1-2, 1-3, 3-4
-        int[][] edges = {
-                {1, 2},
-                {1, 3},
-                {3, 4}
-        };
-
         int result = sol.maxscore(nodeval, edges);
 
-        System.out.println(result);  // Expected output: -12
+        System.out.println(result);
     }
 }
