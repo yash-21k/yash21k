@@ -2,7 +2,7 @@ import java.util.*;
 
 class Solution {
 
-    int maxAnswer = Integer.MIN_VALUE;
+    long maxAnswer = Long.MIN_VALUE;
     List<List<Integer>> adj;
     int[] values;
 
@@ -23,7 +23,7 @@ class Solution {
         }
 
         dfs(0, -1); // root = node 1
-        return maxAnswer;
+        return (int) maxAnswer;
     }
 
     // returns {maxDown, minDown}
@@ -57,7 +57,10 @@ class Solution {
             minDown = Math.min(minDown, Math.min(c1, c2));
         }
 
-        // combine two child paths
+        // ⭐ FIX: consider single downward path also
+        maxAnswer = Math.max(maxAnswer, maxDown);
+
+        // combine two child paths (leaf-to-leaf through this node)
         if (childrenResults.size() >= 2) {
             for (int i = 0; i < childrenResults.size(); i++) {
                 for (int j = i + 1; j < childrenResults.size(); j++) {
@@ -72,7 +75,7 @@ class Solution {
                     };
 
                     for (long val : candidates) {
-                        maxAnswer = Math.max(maxAnswer, (int) val);
+                        maxAnswer = Math.max(maxAnswer, val);
                     }
                 }
             }
@@ -85,7 +88,7 @@ class Solution {
 
         Solution sol = new Solution();
 
-        // Test case from screenshot
+        // TEST CASE 1 (Expected: 2400)
         int[] nodeval = {2, 5, 8, 1, 3, 10, 4};
 
         int[][] edges = {
@@ -98,6 +101,6 @@ class Solution {
         };
 
         int result = sol.maxscore(nodeval, edges);
-        System.out.println(result);  // Expected output: 2400
+        System.out.println(result);
     }
 }
