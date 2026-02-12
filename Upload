@@ -2,11 +2,14 @@ import java.util.*;
 
 class Solution {
 
-    long maxAnswer = Long.MIN_VALUE;
+    long maxAnswer;
     List<List<Integer>> adj;
     int[] values;
 
     public int maxscore(int nodeval[], int[][] edges) {
+
+        maxAnswer = Long.MIN_VALUE;   // ⭐ IMPORTANT RESET
+
         int n = nodeval.length;
         values = nodeval;
 
@@ -53,7 +56,6 @@ class Solution {
             minDown = Math.min(minDown, Math.min(c1, c2));
         }
 
-        // Only leaf-to-leaf paths
         if (childrenResults.size() >= 2) {
             for (int i = 0; i < childrenResults.size(); i++) {
                 for (int j = i + 1; j < childrenResults.size(); j++) {
@@ -81,9 +83,9 @@ class Solution {
 
         Solution sol = new Solution();
 
-        // Test Case 1 → Expected 2400
-        int[] nodeval = {2, 5, 8, 1, 3, 10, 4};
-        int[][] edges = {
+        // Test Case 1 → 2400
+        int[] nodeval1 = {2, 5, 8, 1, 3, 10, 4};
+        int[][] edges1 = {
             {1, 2},
             {1, 3},
             {2, 4},
@@ -92,9 +94,9 @@ class Solution {
             {3, 7}
         };
 
-        System.out.println(sol.maxscore(nodeval, edges));
+        System.out.println(sol.maxscore(nodeval1, edges1));
 
-        // Test Case 2 → Expected 75
+        // Test Case 2 → 75
         int[] nodeval2 = {2, 5, 0, 1, 3, 10, -4, 5};
         int[][] edges2 = {
             {1, 2},
