@@ -1,23 +1,25 @@
-public static String toJsonOnlyOwnFields(Object obj) {
+import com.fasterxml.jackson.annotation.JsonIgnoreType;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 
-    Gson gson = new GsonBuilder()
-            .registerTypeAdapter(Date.class, new CommonConstants.DateDeserializer())
-            .registerTypeAdapter(Calendar.class, new CommonConstants.CalenderDeserializer())
-            .addSerializationExclusionStrategy(new ExclusionStrategy() {
+public class JsonUtil {
 
-                @Override
-                public boolean shouldSkipField(FieldAttributes f) {
-                    // Skip field if NOT declared in runtime class
-                    return !f.getDeclaringClass().equals(obj.getClass());
-                }
+    public static String toJsonOnlyOwnFields(Object obj) throws Exception {
 
-                @Override
-                public boolean shouldSkipClass(Class<?> clazz) {
-                    return false;
-                }
-            })
-            .serializeNulls()
-            .create();
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.enable(SerializationFeature.INDENT_OUTPUT);
 
-    return gson.toJson(obj);
+        Class<?> runtimeClass = obj.getClass();
+        Class<?> parentClass = runtimeClass.getSuperclass();
+
+        if (parentClass != null && parentClass != Object.class) {
+            mapper.addMixIn(parentClass, IgnoreTypeMixin.class);
+        }
+
+        return mapper.writeValueAsString(obj);
+    }
+
+    @JsonIgnoreType
+    private static class IgnoreTypeMixin {
+    }
 }
