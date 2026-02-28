@@ -1,20 +1,23 @@
-public static final Gson gsonOnlyOwnFields = new GsonBuilder()
-        .registerTypeAdapter(Date.class, new CommonConstants.DateDeserializer())
-        .registerTypeAdapter(Calendar.class, new CommonConstants.CalenderDeserializer())
-        .addSerializationExclusionStrategy(new ExclusionStrategy() {
+public static String toJsonOnlyOwnFields(Object obj) {
 
-            @Override
-            public boolean shouldSkipField(FieldAttributes f) {
-                // Skip field if NOT declared in the runtime class
-                return f.getDeclaringClass() != f.getDeclaringClass()
-                        .cast(f.getDeclaringClass())
-                        .equals(f.getDeclaringClass());
-            }
+    Gson gson = new GsonBuilder()
+            .registerTypeAdapter(Date.class, new CommonConstants.DateDeserializer())
+            .registerTypeAdapter(Calendar.class, new CommonConstants.CalenderDeserializer())
+            .addSerializationExclusionStrategy(new ExclusionStrategy() {
 
-            @Override
-            public boolean shouldSkipClass(Class<?> clazz) {
-                return false;
-            }
-        })
-        .serializeNulls()
-        .create();
+                @Override
+                public boolean shouldSkipField(FieldAttributes f) {
+                    // Skip field if NOT declared in runtime class
+                    return !f.getDeclaringClass().equals(obj.getClass());
+                }
+
+                @Override
+                public boolean shouldSkipClass(Class<?> clazz) {
+                    return false;
+                }
+            })
+            .serializeNulls()
+            .create();
+
+    return gson.toJson(obj);
+}
