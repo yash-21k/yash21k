@@ -1,23 +1,20 @@
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
+public static final Gson gsonOnlyOwnFields = new GsonBuilder()
+        .registerTypeAdapter(Date.class, new CommonConstants.DateDeserializer())
+        .registerTypeAdapter(Calendar.class, new CommonConstants.CalenderDeserializer())
+        .addSerializationExclusionStrategy(new ExclusionStrategy() {
 
-public class AlphanumericValidator {
+            @Override
+            public boolean shouldSkipField(FieldAttributes f) {
+                // Skip field if NOT declared in the runtime class
+                return f.getDeclaringClass() != f.getDeclaringClass()
+                        .cast(f.getDeclaringClass())
+                        .equals(f.getDeclaringClass());
+            }
 
-    private static final String REGEX = "^[a-zA-Z0-9]{8,11}$";
-    private static final Pattern PATTERN = Pattern.compile(REGEX);
-
-    public static boolean isValid(String input) {
-        if (input == null) {
-            return false;
-        }
-        Matcher matcher = PATTERN.matcher(input);
-        return matcher.matches();
-    }
-
-    public static void main(String[] args) {
-        System.out.println(isValid("Abc12345"));     // true
-        System.out.println(isValid("abc123"));       // false (too short)
-        System.out.println(isValid("abc123456789")); // false (too long)
-        System.out.println(isValid("abc_12345"));    // false (special char not allowed)
-    }
-}
+            @Override
+            public boolean shouldSkipClass(Class<?> clazz) {
+                return false;
+            }
+        })
+        .serializeNulls()
+        .create();
