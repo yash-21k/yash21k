@@ -1,25 +1,25 @@
-import com.fasterxml.jackson.annotation.JsonIgnoreType;
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
 public class JsonUtil {
 
-    public static String toJsonOnlyOwnFields(Object obj) throws Exception {
+    private static final ObjectMapper mapper = new ObjectMapper();
 
-        ObjectMapper mapper = new ObjectMapper();
+    static {
+        // Pretty print (optional)
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
 
-        Class<?> runtimeClass = obj.getClass();
-        Class<?> parentClass = runtimeClass.getSuperclass();
+        // 🔥 Disable getter detection completely
+        mapper.setVisibility(PropertyAccessor.GETTER, JsonAutoDetect.Visibility.NONE);
+        mapper.setVisibility(PropertyAccessor.IS_GETTER, JsonAutoDetect.Visibility.NONE);
 
-        if (parentClass != null && parentClass != Object.class) {
-            mapper.addMixIn(parentClass, IgnoreTypeMixin.class);
-        }
-
-        return mapper.writeValueAsString(obj);
+        // ✅ Only serialize fields
+        mapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
     }
 
-    @JsonIgnoreType
-    private static class IgnoreTypeMixin {
+    public static String toJson(Object obj) throws Exception {
+        return mapper.writeValueAsString(obj);
     }
 }
