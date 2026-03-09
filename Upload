@@ -1,2 +1,0 @@
-PO is now consuming POL (SafeStore & TxnStatusStore) data, and the data is being persisted into BT and BQ. We have verified a few NA region UETRs in BQ to confirm successful ingestion.
-Additionally, we have used Incident number * to create the required subscriptions and deploy the deduplication service, as advised by the DevOps team. This approach was taken due to a pipeline failure, because of which our approved CR could not be classified as an Emergency CR.
