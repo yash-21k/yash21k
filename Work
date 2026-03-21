@@ -4,40 +4,72 @@ import com.google.pubsub.v1.ProjectTopicName;
 import com.google.pubsub.v1.PubsubMessage;
 import org.junit.jupiter.api.Test;
 
+import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class PubSubPublisherTest {
+public class PubSubLoadTest {
 
     @Test
-    void shouldPublishMessageToTopic() throws Exception {
+    void publish300MessagesPerSecond() throws Exception {
 
         String projectId = "your-project-id";
         String topicId = "your-topic-id";
 
-        ProjectTopicName topicName = ProjectTopicName.of(projectId, topicId);
+        Publisher publisher = Publisher.newBuilder(
+                ProjectTopicName.of(projectId, topicId)
+        ).build();
 
-        Publisher publisher = null;
+        ScheduledExecutorService scheduler =
+                Executors.newScheduledThreadPool(1);
 
-        try {
-            publisher = Publisher.newBuilder(topicName).build();
+        Runnable task = () -> {
+            try {
+                // your file template
+                String template = getFileAsString();
 
-            String message = "Test message from JUnit";
-            ByteString data = ByteString.copyFromUtf8(message);
+                // replace field with random UUID
+                String message =
+                        template.replace("{{UUID}}",
+                                UUID.randomUUID().toString());
 
-            PubsubMessage pubsubMessage =
-                    PubsubMessage.newBuilder()
-                            .setData(data)
-                            .build();
+                ByteString data =
+                        ByteString.copyFromUtf8(message);
 
-            String messageId = publisher.publish(pubsubMessage).get();
+                PubsubMessage pubsubMessage =
+                        PubsubMessage.newBuilder()
+                                .setData(data)
+                                .build();
 
-            System.out.println("Published message ID: " + messageId);
+                publisher.publish(pubsubMessage);
 
-        } finally {
-            if (publisher != null) {
-                publisher.shutdown();
-                publisher.awaitTermination(1, TimeUnit.MINUTES);
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        }
+        };
+
+        // run 300 messages per second
+        scheduler.scheduleAtFixedRate(
+                () -> {
+                    for (int i = 0; i < 300; i++) {
+                        task.run();
+                    }
+                },
+                0,
+                1,
+                TimeUnit.SECONDS
+        );
+
+        // run test for 30 seconds
+        Thread.sleep(30000);
+
+        scheduler.shutdown();
+        publisher.shutdown();
+    }
+
+    // your existing method
+    private String getFileAsString() {
+        return "{ \"id\": \"{{UUID}}\", \"name\": \"test\" }";
     }
 }
