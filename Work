@@ -1,42 +1,40 @@
 import com.google.cloud.storage.Blob;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
+import org.springframework.core.env.PropertiesPropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.support.PropertySourceFactory;
+import org.springframework.core.io.support.EncodedResource;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
 
-public class GcsPropertyLoader {
+public class GcsPropertySourceFactory implements PropertySourceFactory {
 
-    private static final Map<String, Properties> CACHE = new ConcurrentHashMap<>();
+    @Override
+    public PropertySource<?> createPropertySource(
+            String name,
+            EncodedResource resource) {
 
-    public static String get(String bucketName, String fileName, String key) {
         try {
-            String cacheKey = bucketName + "/" + fileName;
+            String location = resource.getResource().getDescription();
+            // expected: gcs:bucket/file.properties
+            String path = location.replace("gcs:", "");
+            String[] parts = path.split("/", 2);
 
-            Properties props = CACHE.computeIfAbsent(cacheKey, k -> {
-                try {
-                    Storage storage = StorageOptions.getDefaultInstance().getService();
-                    Blob blob = storage.get(bucketName, fileName);
+            String bucket = parts[0];
+            String file = parts[1];
 
-                    Properties properties = new Properties();
-                    try (InputStream input =
-                                 new ByteArrayInputStream(blob.getContent())) {
-                        properties.load(input);
-                    }
-                    return properties;
+            Storage storage = StorageOptions.getDefaultInstance().getService();
+            Blob blob = storage.get(bucket, file);
 
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
-            });
+            Properties props = new Properties();
+            props.load(new ByteArrayInputStream(blob.getContent()));
 
-            return props.getProperty(key);
+            return new PropertiesPropertySource(file, props);
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to read property from GCS", e);
+            throw new RuntimeException("Failed to load GCS property source", e);
         }
     }
 }
