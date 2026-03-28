@@ -1,40 +1,57 @@
-import com.google.cloud.storage.Blob;
-import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
-import org.springframework.core.env.PropertiesPropertySource;
-import org.springframework.core.env.PropertySource;
-import org.springframework.core.io.support.PropertySourceFactory;
-import org.springframework.core.io.support.EncodedResource;
+import org.apache.beam.sdk.transforms.DoFnTester;
+import org.junit.Test;
 
-import java.io.ByteArrayInputStream;
-import java.util.Properties;
+import com.google.pubsub.v1.PubsubMessage;
 
-public class GcsPropertySourceFactory implements PropertySourceFactory {
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.HashMap;
 
-    @Override
-    public PropertySource<?> createPropertySource(
-            String name,
-            EncodedResource resource) {
+import static org.mockito.Mockito.*;
 
-        try {
-            String location = resource.getResource().getDescription();
-            // expected: gcs:bucket/file.properties
-            String path = location.replace("gcs:", "");
-            String[] parts = path.split("/", 2);
+public class ProcessorTest {
 
-            String bucket = parts[0];
-            String file = parts[1];
+    @Test
+    public void testProcessor_withDedupAndMgmtEnrichment() throws Exception {
 
-            Storage storage = StorageOptions.getDefaultInstance().getService();
-            Blob blob = storage.get(bucket, file);
+        // 1. Read payload from file (no attributes)
+        String payload = Files.readString(
+                Paths.get("src/test/resources/input.json")
+        );
 
-            Properties props = new Properties();
-            props.load(new ByteArrayInputStream(blob.getContent()));
+        // 2. Convert to PubsubMessage
+        PubsubMessage raw =
+                PubsubMessage.newBuilder()
+                        .setData(
+                                com.google.protobuf.ByteString.copyFromUtf8(payload)
+                        )
+                        .putAllAttributes(new HashMap<>())
+                        .build();
 
-            return new PropertiesPropertySource(file, props);
+        // 3. Mock Bigtable (if dedup uses it)
+        BigtableClient mockBigtable = mock(BigtableClient.class);
+        when(mockBigtable.exists(any())).thenReturn(false);
 
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to load GCS property source", e);
-        }
+        // 4. Run Dedup DoFn
+        DoFnTester<PubsubMessage, PubsubMessage> dedupTester =
+                DoFnTester.of(new DedupDoFn(mockBigtable));
+
+        PubsubMessage afterDedup =
+                dedupTester.processBundle(raw).get(0);
+
+        // 5. Run Mgmt DoFn
+        DoFnTester<PubsubMessage, PubsubMessage> mgmtTester =
+                DoFnTester.of(new MgmtDoFn());
+
+        PubsubMessage enriched =
+                mgmtTester.processBundle(afterDedup).get(0);
+
+        // 6. Run processor
+        Processor processor = new Processor();
+        processor.process(enriched);
+
+        // 7. Assertions (example)
+        assert enriched.getAttributesMap().containsKey("timestamp");
     }
 }
