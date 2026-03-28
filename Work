@@ -1,21 +1,42 @@
+import com.google.cloud.storage.Blob;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageOptions;
+
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class ConfigHolder {
+public class GcsPropertyLoader {
 
-    private static final Properties PROPS;
+    private static final Map<String, Properties> CACHE = new ConcurrentHashMap<>();
 
-    static {
+    public static String get(String bucketName, String fileName, String key) {
         try {
-            PROPS = GcsPropertyLoader.load(
-                    "config-bucket",
-                    "application.properties"
-            );
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
+            String cacheKey = bucketName + "/" + fileName;
 
-    public static String get(String key) {
-        return PROPS.getProperty(key);
+            Properties props = CACHE.computeIfAbsent(cacheKey, k -> {
+                try {
+                    Storage storage = StorageOptions.getDefaultInstance().getService();
+                    Blob blob = storage.get(bucketName, fileName);
+
+                    Properties properties = new Properties();
+                    try (InputStream input =
+                                 new ByteArrayInputStream(blob.getContent())) {
+                        properties.load(input);
+                    }
+                    return properties;
+
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+
+            return props.getProperty(key);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read property from GCS", e);
+        }
     }
 }
