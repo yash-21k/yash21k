@@ -1,69 +1,21 @@
-import com.google.cloud.pubsub.v1.Publisher;
-import com.google.protobuf.ByteString;
-import com.google.pubsub.v1.ProjectTopicName;
-import com.google.pubsub.v1.PubsubMessage;
-import org.junit.jupiter.api.Test;
+import java.util.Properties;
 
-import java.util.UUID;
-import java.util.concurrent.*;
+public class ConfigHolder {
 
-public class PubSubLoadTest {
+    private static final Properties PROPS;
 
-    @Test
-    void publish300MessagesPerSecondFor20Minutes() throws Exception {
-
-        String projectId = "your-project-id";
-        String topicId = "your-topic-id";
-
-        Publisher publisher = Publisher.newBuilder(
-                ProjectTopicName.of(projectId, topicId)
-        ).build();
-
-        ScheduledExecutorService scheduler =
-                Executors.newScheduledThreadPool(4);
-
-        Runnable publishTask = () -> {
-            try {
-                String template = getFileAsString();
-
-                String message =
-                        template.replace(
-                                "{{UUID}}",
-                                UUID.randomUUID().toString()
-                        );
-
-                PubsubMessage pubsubMessage =
-                        PubsubMessage.newBuilder()
-                                .setData(ByteString.copyFromUtf8(message))
-                                .build();
-
-                publisher.publish(pubsubMessage);
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        };
-
-        // Send 300 messages every second
-        ScheduledFuture<?> future =
-                scheduler.scheduleAtFixedRate(() -> {
-                    for (int i = 0; i < 300; i++) {
-                        publishTask.run();
-                    }
-                }, 0, 1, TimeUnit.SECONDS);
-
-        // run for 20 minutes
-        Thread.sleep(TimeUnit.MINUTES.toMillis(20));
-
-        // stop scheduler
-        future.cancel(true);
-        scheduler.shutdown();
-
-        publisher.shutdown();
-        publisher.awaitTermination(1, TimeUnit.MINUTES);
+    static {
+        try {
+            PROPS = GcsPropertyLoader.load(
+                    "config-bucket",
+                    "application.properties"
+            );
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    private String getFileAsString() {
-        return "{ \"txnId\": \"{{UUID}}\", \"amount\": 100 }";
+    public static String get(String key) {
+        return PROPS.getProperty(key);
     }
 }
