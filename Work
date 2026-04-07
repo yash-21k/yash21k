@@ -1,57 +1,77 @@
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.api.core.ApiFuture;
+import com.google.cloud.pubsub.v1.Publisher;
+import com.google.protobuf.ByteString;
+import com.google.pubsub.v1.ProjectTopicName;
+import com.google.pubsub.v1.PubsubMessage;
 
-import java.util.Iterator;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
-public class UetrReplacer {
+public class RateControlledPublisher {
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    // -------- CONFIGURABLE VALUES ----------
+    private static final String PROJECT_ID = "your-project-id";
+    private static final String TOPIC_ID = "your-topic-id";
 
-    public static String replaceUetrWithRandomUUID(String json) throws Exception {
-        JsonNode root = mapper.readTree(json);
-        replaceRecursively(root);
-        return mapper.writeValueAsString(root);
-    }
+    private static final int MESSAGES_PER_SECOND = 6;
+    private static final int PUBLISH_DURATION_MIN = 3;
+    private static final int SLEEP_DURATION_MIN = 3;
+    private static final int TOTAL_RUNTIME_MIN = 60;
+    // ---------------------------------------
 
-    private static void replaceRecursively(JsonNode node) {
-        if (node.isObject()) {
-            ObjectNode obj = (ObjectNode) node;
-
-            Iterator<Map.Entry<String, JsonNode>> fields = obj.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> entry = fields.next();
-
-                if ("uetr".equalsIgnoreCase(entry.getKey())) {
-                    obj.put(entry.getKey(), UUID.randomUUID().toString());
-                } else {
-                    replaceRecursively(entry.getValue());
-                }
-            }
-
-        } else if (node.isArray()) {
-            for (JsonNode element : node) {
-                replaceRecursively(element);
-            }
-        }
-    }
-
-    // Example usage
     public static void main(String[] args) throws Exception {
-        String json = "{\n" +
-                "  \"uetr\": \"old\",\n" +
-                "  \"payment\": {\n" +
-                "    \"uetr\": \"old2\"\n" +
-                "  },\n" +
-                "  \"list\": [\n" +
-                "    {\"uetr\": \"old3\"},\n" +
-                "    {\"test\": \"value\"}\n" +
-                "  ]\n" +
-                "}";
 
-        String updated = replaceUetrWithRandomUUID(json);
-        System.out.println(updated);
+        ProjectTopicName topicName = ProjectTopicName.of(PROJECT_ID, TOPIC_ID);
+        Publisher publisher = Publisher.newBuilder(topicName).build();
+
+        long totalEndTime = System.currentTimeMillis() +
+                TimeUnit.MINUTES.toMillis(TOTAL_RUNTIME_MIN);
+
+        try {
+
+            while (System.currentTimeMillis() < totalEndTime) {
+
+                long publishEndTime = System.currentTimeMillis() +
+                        TimeUnit.MINUTES.toMillis(PUBLISH_DURATION_MIN);
+
+                System.out.println("Publishing started...");
+
+                while (System.currentTimeMillis() < publishEndTime) {
+
+                    long secondStart = System.currentTimeMillis();
+                    List<ApiFuture<String>> futures = new ArrayList<>();
+
+                    for (int i = 0; i < MESSAGES_PER_SECOND; i++) {
+
+                        String payload = "test-message-" + UUID.randomUUID();
+
+                        PubsubMessage message = PubsubMessage.newBuilder()
+                                .setData(ByteString.copyFromUtf8(payload))
+                                .build();
+
+                        futures.add(publisher.publish(message));
+                    }
+
+                    // wait remaining time in this second
+                    long elapsed = System.currentTimeMillis() - secondStart;
+                    long sleepTime = 1000 - elapsed;
+
+                    if (sleepTime > 0) {
+                        Thread.sleep(sleepTime);
+                    }
+                }
+
+                System.out.println("Sleeping for " + SLEEP_DURATION_MIN + " minutes...");
+                Thread.sleep(TimeUnit.MINUTES.toMillis(SLEEP_DURATION_MIN));
+            }
+
+        } finally {
+            publisher.shutdown();
+            publisher.awaitTermination(1, TimeUnit.MINUTES);
+        }
+
+        System.out.println("Finished execution.");
     }
 }
