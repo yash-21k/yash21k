@@ -1,57 +1,57 @@
-import org.apache.beam.sdk.transforms.DoFnTester;
-import org.junit.Test;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import com.google.pubsub.v1.PubsubMessage;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.UUID;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.HashMap;
+public class UetrReplacer {
 
-import static org.mockito.Mockito.*;
+    private static final ObjectMapper mapper = new ObjectMapper();
 
-public class ProcessorTest {
+    public static String replaceUetrWithRandomUUID(String json) throws Exception {
+        JsonNode root = mapper.readTree(json);
+        replaceRecursively(root);
+        return mapper.writeValueAsString(root);
+    }
 
-    @Test
-    public void testProcessor_withDedupAndMgmtEnrichment() throws Exception {
+    private static void replaceRecursively(JsonNode node) {
+        if (node.isObject()) {
+            ObjectNode obj = (ObjectNode) node;
 
-        // 1. Read payload from file (no attributes)
-        String payload = Files.readString(
-                Paths.get("src/test/resources/input.json")
-        );
+            Iterator<Map.Entry<String, JsonNode>> fields = obj.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
 
-        // 2. Convert to PubsubMessage
-        PubsubMessage raw =
-                PubsubMessage.newBuilder()
-                        .setData(
-                                com.google.protobuf.ByteString.copyFromUtf8(payload)
-                        )
-                        .putAllAttributes(new HashMap<>())
-                        .build();
+                if ("uetr".equalsIgnoreCase(entry.getKey())) {
+                    obj.put(entry.getKey(), UUID.randomUUID().toString());
+                } else {
+                    replaceRecursively(entry.getValue());
+                }
+            }
 
-        // 3. Mock Bigtable (if dedup uses it)
-        BigtableClient mockBigtable = mock(BigtableClient.class);
-        when(mockBigtable.exists(any())).thenReturn(false);
+        } else if (node.isArray()) {
+            for (JsonNode element : node) {
+                replaceRecursively(element);
+            }
+        }
+    }
 
-        // 4. Run Dedup DoFn
-        DoFnTester<PubsubMessage, PubsubMessage> dedupTester =
-                DoFnTester.of(new DedupDoFn(mockBigtable));
+    // Example usage
+    public static void main(String[] args) throws Exception {
+        String json = "{\n" +
+                "  \"uetr\": \"old\",\n" +
+                "  \"payment\": {\n" +
+                "    \"uetr\": \"old2\"\n" +
+                "  },\n" +
+                "  \"list\": [\n" +
+                "    {\"uetr\": \"old3\"},\n" +
+                "    {\"test\": \"value\"}\n" +
+                "  ]\n" +
+                "}";
 
-        PubsubMessage afterDedup =
-                dedupTester.processBundle(raw).get(0);
-
-        // 5. Run Mgmt DoFn
-        DoFnTester<PubsubMessage, PubsubMessage> mgmtTester =
-                DoFnTester.of(new MgmtDoFn());
-
-        PubsubMessage enriched =
-                mgmtTester.processBundle(afterDedup).get(0);
-
-        // 6. Run processor
-        Processor processor = new Processor();
-        processor.process(enriched);
-
-        // 7. Assertions (example)
-        assert enriched.getAttributesMap().containsKey("timestamp");
+        String updated = replaceUetrWithRandomUUID(json);
+        System.out.println(updated);
     }
 }
