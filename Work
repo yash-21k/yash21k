@@ -1,77 +1,85 @@
-import com.google.api.core.ApiFuture;
-import com.google.cloud.pubsub.v1.Publisher;
-import com.google.protobuf.ByteString;
-import com.google.pubsub.v1.ProjectTopicName;
+import com.google.cloud.pubsub.v1.Subscriber;
+import com.google.pubsub.v1.ProjectSubscriptionName;
 import com.google.pubsub.v1.PubsubMessage;
+import com.google.cloud.pubsub.v1.MessageReceiver;
+import com.google.cloud.pubsub.v1.AckReplyConsumer;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
-public class RateControlledPublisher {
+public class PubSubToFileUtility {
 
-    // -------- CONFIGURABLE VALUES ----------
-    private static final String PROJECT_ID = "your-project-id";
-    private static final String TOPIC_ID = "your-topic-id";
-
-    private static final int MESSAGES_PER_SECOND = 6;
-    private static final int PUBLISH_DURATION_MIN = 3;
-    private static final int SLEEP_DURATION_MIN = 3;
-    private static final int TOTAL_RUNTIME_MIN = 60;
-    // ---------------------------------------
+    private static final AtomicInteger FILE_COUNTER = new AtomicInteger(0);
 
     public static void main(String[] args) throws Exception {
 
-        ProjectTopicName topicName = ProjectTopicName.of(PROJECT_ID, TOPIC_ID);
-        Publisher publisher = Publisher.newBuilder(topicName).build();
+        String projectId = "your-project-id";
+        String subscriptionId = "your-subscription-id";
+        String outputDir = "/tmp/pubsub-output"; // change path
+        int runTimeMinutes = 10; // configurable
 
-        long totalEndTime = System.currentTimeMillis() +
-                TimeUnit.MINUTES.toMillis(TOTAL_RUNTIME_MIN);
+        readAndWrite(projectId, subscriptionId, outputDir, runTimeMinutes);
+    }
 
-        try {
+    public static void readAndWrite(
+            String projectId,
+            String subscriptionId,
+            String outputDir,
+            int runTimeMinutes) throws Exception {
 
-            while (System.currentTimeMillis() < totalEndTime) {
+        ProjectSubscriptionName subscriptionName =
+                ProjectSubscriptionName.of(projectId, subscriptionId);
 
-                long publishEndTime = System.currentTimeMillis() +
-                        TimeUnit.MINUTES.toMillis(PUBLISH_DURATION_MIN);
+        createDirectory(outputDir);
 
-                System.out.println("Publishing started...");
+        MessageReceiver receiver =
+                (PubsubMessage message, AckReplyConsumer consumer) -> {
 
-                while (System.currentTimeMillis() < publishEndTime) {
+                    try {
+                        String data = message.getData().toStringUtf8();
 
-                    long secondStart = System.currentTimeMillis();
-                    List<ApiFuture<String>> futures = new ArrayList<>();
+                        System.out.println("Received: " + data);
 
-                    for (int i = 0; i < MESSAGES_PER_SECOND; i++) {
+                        writeToFile(outputDir, data);
 
-                        String payload = "test-message-" + UUID.randomUUID();
-
-                        PubsubMessage message = PubsubMessage.newBuilder()
-                                .setData(ByteString.copyFromUtf8(payload))
-                                .build();
-
-                        futures.add(publisher.publish(message));
+                        consumer.ack();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        consumer.nack();
                     }
+                };
 
-                    // wait remaining time in this second
-                    long elapsed = System.currentTimeMillis() - secondStart;
-                    long sleepTime = 1000 - elapsed;
+        Subscriber subscriber = Subscriber.newBuilder(subscriptionName, receiver).build();
 
-                    if (sleepTime > 0) {
-                        Thread.sleep(sleepTime);
-                    }
-                }
+        subscriber.startAsync().awaitRunning();
 
-                System.out.println("Sleeping for " + SLEEP_DURATION_MIN + " minutes...");
-                Thread.sleep(TimeUnit.MINUTES.toMillis(SLEEP_DURATION_MIN));
-            }
+        System.out.println("Listening for messages...");
 
-        } finally {
-            publisher.shutdown();
-            publisher.awaitTermination(1, TimeUnit.MINUTES);
+        TimeUnit.MINUTES.sleep(runTimeMinutes);
+
+        subscriber.stopAsync();
+    }
+
+    private static void writeToFile(String outputDir, String message) throws IOException {
+
+        String fileName = outputDir + "/messages_" +
+                FILE_COUNTER.incrementAndGet() + ".txt";
+
+        try (FileWriter writer = new FileWriter(fileName)) {
+            writer.write("Timestamp: " + LocalDateTime.now());
+            writer.write("\n");
+            writer.write(message);
         }
+    }
 
-        System.out.println("Finished execution.");
+    private static void createDirectory(String outputDir) {
+        File dir = new File(outputDir);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
     }
 }
