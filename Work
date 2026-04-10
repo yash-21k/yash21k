@@ -1,85 +1,30 @@
-import com.google.cloud.pubsub.v1.Subscriber;
-import com.google.pubsub.v1.ProjectSubscriptionName;
-import com.google.pubsub.v1.PubsubMessage;
-import com.google.cloud.pubsub.v1.MessageReceiver;
-import com.google.cloud.pubsub.v1.AckReplyConsumer;
+import com.google.cloud.dataflow.v1beta3.GetJobRequest;
+import com.google.cloud.dataflow.v1beta3.Job;
+import com.google.cloud.dataflow.v1beta3.JobsV1Beta3Client;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.time.LocalDateTime;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-
-public class PubSubToFileUtility {
-
-    private static final AtomicInteger FILE_COUNTER = new AtomicInteger(0);
+public class GetTemplateLocation {
 
     public static void main(String[] args) throws Exception {
 
-        String projectId = "your-project-id";
-        String subscriptionId = "your-subscription-id";
-        String outputDir = "/tmp/pubsub-output"; // change path
-        int runTimeMinutes = 10; // configurable
+        String projectId = "YOUR_PROJECT_ID";
+        String region = "us-central1"; // change if needed
+        String jobId = "YOUR_JOB_ID";
 
-        readAndWrite(projectId, subscriptionId, outputDir, runTimeMinutes);
-    }
+        try (JobsV1Beta3Client client = JobsV1Beta3Client.create()) {
 
-    public static void readAndWrite(
-            String projectId,
-            String subscriptionId,
-            String outputDir,
-            int runTimeMinutes) throws Exception {
+            GetJobRequest request = GetJobRequest.newBuilder()
+                    .setProjectId(projectId)
+                    .setLocation(region)
+                    .setJobId(jobId)
+                    .build();
 
-        ProjectSubscriptionName subscriptionName =
-                ProjectSubscriptionName.of(projectId, subscriptionId);
+            Job job = client.getJob(request);
 
-        createDirectory(outputDir);
+            // This prints the template GCS location
+            String template = job.getEnvironment()
+                                 .getSdkPipelineOptions();
 
-        MessageReceiver receiver =
-                (PubsubMessage message, AckReplyConsumer consumer) -> {
-
-                    try {
-                        String data = message.getData().toStringUtf8();
-
-                        System.out.println("Received: " + data);
-
-                        writeToFile(outputDir, data);
-
-                        consumer.ack();
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                        consumer.nack();
-                    }
-                };
-
-        Subscriber subscriber = Subscriber.newBuilder(subscriptionName, receiver).build();
-
-        subscriber.startAsync().awaitRunning();
-
-        System.out.println("Listening for messages...");
-
-        TimeUnit.MINUTES.sleep(runTimeMinutes);
-
-        subscriber.stopAsync();
-    }
-
-    private static void writeToFile(String outputDir, String message) throws IOException {
-
-        String fileName = outputDir + "/messages_" +
-                FILE_COUNTER.incrementAndGet() + ".txt";
-
-        try (FileWriter writer = new FileWriter(fileName)) {
-            writer.write("Timestamp: " + LocalDateTime.now());
-            writer.write("\n");
-            writer.write(message);
-        }
-    }
-
-    private static void createDirectory(String outputDir) {
-        File dir = new File(outputDir);
-        if (!dir.exists()) {
-            dir.mkdirs();
+            System.out.println(template);
         }
     }
 }
