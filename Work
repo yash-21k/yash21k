@@ -1,30 +1,5 @@
-import com.google.cloud.dataflow.v1beta3.GetJobRequest;
-import com.google.cloud.dataflow.v1beta3.Job;
-import com.google.cloud.dataflow.v1beta3.JobsV1Beta3Client;
-
-public class GetTemplateLocation {
-
-    public static void main(String[] args) throws Exception {
-
-        String projectId = "YOUR_PROJECT_ID";
-        String region = "us-central1"; // change if needed
-        String jobId = "YOUR_JOB_ID";
-
-        try (JobsV1Beta3Client client = JobsV1Beta3Client.create()) {
-
-            GetJobRequest request = GetJobRequest.newBuilder()
-                    .setProjectId(projectId)
-                    .setLocation(region)
-                    .setJobId(jobId)
-                    .build();
-
-            Job job = client.getJob(request);
-
-            // This prints the template GCS location
-            String template = job.getEnvironment()
-                                 .getSdkPipelineOptions();
-
-            System.out.println(template);
-        }
-    }
-}
+<dependency>
+  <groupId>com.google.cloud</groupId>
+  <artifactId>google-cloud-dataflow</artifactId>
+  <version>0.47.0</version>
+</dependency>
