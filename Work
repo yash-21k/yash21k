@@ -1,8 +1,90 @@
-Dear Team,
+import com.google.cloud.pubsub.v1.AckReplyConsumer;
+import com.google.cloud.pubsub.v1.MessageReceiver;
+import com.google.cloud.pubsub.v1.Publisher;
+import com.google.cloud.pubsub.v1.Subscriber;
+import com.google.pubsub.v1.ProjectSubscriptionName;
+import com.google.pubsub.v1.ProjectTopicName;
+import com.google.pubsub.v1.PubsubMessage;
 
-You are invited to join Amit’s farewell meeting.
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
-Kindly join at your convenience.
+public class SubscriptionToTopicRepublisher {
 
-Thanks,
-[Your Name]
+    public static void main(String[] args) throws Exception {
+
+        String sourceProjectId = "your-project-id";
+        String subscriptionId = "your-subscription-id";
+
+        String targetProjectId = "your-project-id";
+        String topicId = "your-topic-id";
+
+        int runTimeSeconds = 30; // configurable runtime
+
+        startRepublisher(
+                sourceProjectId,
+                subscriptionId,
+                targetProjectId,
+                topicId,
+                runTimeSeconds
+        );
+    }
+
+    public static void startRepublisher(
+            String sourceProjectId,
+            String subscriptionId,
+            String targetProjectId,
+            String topicId,
+            int runTimeSeconds) throws Exception {
+
+        ProjectSubscriptionName subscriptionName =
+                ProjectSubscriptionName.of(sourceProjectId, subscriptionId);
+
+        ProjectTopicName topicName =
+                ProjectTopicName.of(targetProjectId, topicId);
+
+        Publisher publisher = Publisher.newBuilder(topicName).build();
+
+        MessageReceiver receiver = (PubsubMessage message, AckReplyConsumer consumer) -> {
+            try {
+
+                PubsubMessage.Builder builder = PubsubMessage.newBuilder()
+                        .setData(message.getData());
+
+                for (Map.Entry<String, String> entry : message.getAttributesMap().entrySet()) {
+                    builder.putAttributes(entry.getKey(), entry.getValue());
+                }
+
+                String newMessageId = publisher.publish(builder.build()).get();
+
+                System.out.println("Republished Message ID: " + newMessageId);
+
+                consumer.ack();
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                consumer.nack();
+            }
+        };
+
+        Subscriber subscriber =
+                Subscriber.newBuilder(subscriptionName, receiver)
+                        .setParallelPullCount(2)
+                        .build();
+
+        subscriber.startAsync().awaitRunning();
+
+        System.out.println("Running for " + runTimeSeconds + " seconds...");
+
+        TimeUnit.SECONDS.sleep(runTimeSeconds);
+
+        System.out.println("Stopping subscriber...");
+
+        subscriber.stopAsync().awaitTerminated();
+
+        publisher.shutdown();
+        publisher.awaitTermination(1, TimeUnit.MINUTES);
+
+        System.out.println("Completed.");
+    }
+}
