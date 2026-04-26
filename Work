@@ -1,48 +1,29 @@
 import com.google.api.core.ApiFuture;
-import com.google.api.core.ApiFutureCallback;
-import com.google.api.core.ApiFutures;
 import com.google.api.gax.batching.BatchingSettings;
 import com.google.api.gax.core.InstantiatingExecutorProvider;
 import com.google.cloud.pubsub.v1.Publisher;
-import com.google.common.util.concurrent.MoreExecutors;
 import com.google.protobuf.ByteString;
 import com.google.pubsub.v1.ProjectTopicName;
 import com.google.pubsub.v1.PubsubMessage;
 import org.threeten.bp.Duration;
 
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class SingleTopicPerfPublisher {
+public class Topic5000TPSPublisher {
 
-    // ================= CONFIG =================
     private static final String PROJECT_ID = "your-project-id";
     private static final String TOPIC_NAME = "your-topic-name";
-
-    // payload file
     private static final String FILE_NAME = "message.json";
-
-    // target msgs/sec
-    private static final int TOTAL_TPS = 5000;
-
-    // run duration
-    private static final int DURATION_MINUTES = 10;
-
-    // tuned for your machine
-    private static final int WORKER_THREADS = 32;
-
-    // placeholder inside payload
     private static final String REF_TO_REPLACE = "REFERENCE_NUMBER";
-    // =========================================
+
+    private static final int TOTAL_TPS = 5000;
+    private static final int DURATION_MINUTES = 10;
 
     private static Publisher publisher;
 
-    private static final AtomicLong SUCCESS = new AtomicLong();
-    private static final AtomicLong FAILURE = new AtomicLong();
-    private static final AtomicLong LAST_SUCCESS = new AtomicLong();
-    private static final AtomicLong PEAK_TPS = new AtomicLong();
+    private static final AtomicLong SENT = new AtomicLong();
 
     public static void main(String[] args) throws Exception {
 
@@ -50,9 +31,6 @@ public class SingleTopicPerfPublisher {
 
         String basePayload =
                 CommonUtils.GetFileFromResource(FILE_NAME);
-
-        ExecutorService workerPool =
-                Executors.newFixedThreadPool(WORKER_THREADS);
 
         ScheduledExecutorService scheduler =
                 Executors.newScheduledThreadPool(1);
@@ -64,97 +42,46 @@ public class SingleTopicPerfPublisher {
                 System.currentTimeMillis()
                         + TimeUnit.MINUTES.toMillis(DURATION_MINUTES);
 
-        // real time TPS meter
+        int tickMs = 100;
+        int msgsPerTick = TOTAL_TPS / (1000 / tickMs); // 500
+
         monitor.scheduleAtFixedRate(() -> {
-
-            long currentSuccess = SUCCESS.get();
-            long tps =
-                    currentSuccess -
-                    LAST_SUCCESS.getAndSet(currentSuccess);
-
-            PEAK_TPS.updateAndGet(v -> Math.max(v, tps));
-
             System.out.println(
-                    "TPS=" + tps +
-                    " | PeakTPS=" + PEAK_TPS.get() +
-                    " | Success=" + currentSuccess +
-                    " | Failure=" + FAILURE.get() +
-                    " | ActiveThreads=" +
-                    Thread.activeCount()
+                    "Sent=" + SENT.get()
             );
-
-        }, 1, 1, TimeUnit.SECONDS);
-
-        // smooth scheduling every 10 ms
-        int intervalMs = 10;
-        int msgsPerTick =
-                Math.max(1, TOTAL_TPS / (1000 / intervalMs));
+        },1,1,TimeUnit.SECONDS);
 
         scheduler.scheduleAtFixedRate(() -> {
 
             if (System.currentTimeMillis() > endTime) {
-                shutdown(workerPool, scheduler, monitor);
+                shutdown(scheduler, monitor);
                 return;
             }
 
             for (int i = 0; i < msgsPerTick; i++) {
 
-                workerPool.submit(() -> {
+                String uuid = UUID.randomUUID().toString();
 
-                    String uuid =
-                            UUID.randomUUID().toString();
+                String payload =
+                        basePayload.replace(
+                                REF_TO_REPLACE,
+                                uuid
+                        );
 
-                    String payload =
-                            basePayload.replace(
-                                    REF_TO_REPLACE,
-                                    uuid
-                            );
+                PubsubMessage message =
+                        PubsubMessage.newBuilder()
+                                .setData(
+                                        ByteString.copyFromUtf8(payload))
+                                .build();
 
-                    publish(payload);
-                });
+                publisher.publish(message);
+                SENT.incrementAndGet();
             }
 
-        }, 0, intervalMs, TimeUnit.MILLISECONDS);
+        }, 0, tickMs, TimeUnit.MILLISECONDS);
     }
 
-    private static void publish(String payload) {
-
-        try {
-
-            PubsubMessage message =
-                    PubsubMessage.newBuilder()
-                            .setData(
-                                    ByteString.copyFromUtf8(
-                                            payload))
-                            .build();
-
-            ApiFuture<String> future =
-                    publisher.publish(message);
-
-            ApiFutures.addCallback(
-                    future,
-                    new ApiFutureCallback<String>() {
-
-                        @Override
-                        public void onSuccess(String result) {
-                            SUCCESS.incrementAndGet();
-                        }
-
-                        @Override
-                        public void onFailure(Throwable t) {
-                            FAILURE.incrementAndGet();
-                        }
-                    },
-                    MoreExecutors.directExecutor()
-            );
-
-        } catch (Exception e) {
-            FAILURE.incrementAndGet();
-        }
-    }
-
-    private static void createPublisher()
-            throws Exception {
+    private static void createPublisher() throws Exception {
 
         publisher =
                 Publisher.newBuilder(
@@ -162,49 +89,31 @@ public class SingleTopicPerfPublisher {
                                         PROJECT_ID,
                                         TOPIC_NAME))
                         .setBatchingSettings(
-                                BatchingSettings
-                                        .newBuilder()
-                                        .setElementCountThreshold(500L)
+                                BatchingSettings.newBuilder()
+                                        .setElementCountThreshold(1000L)
                                         .setRequestByteThreshold(
-                                                5L * 1024L * 1024L)
+                                                10L * 1024L * 1024L)
                                         .setDelayThreshold(
-                                                Duration.ofMillis(2))
+                                                Duration.ofMillis(10))
                                         .build())
                         .setExecutorProvider(
                                 InstantiatingExecutorProvider
                                         .newBuilder()
-                                        .setExecutorThreadCount(8)
+                                        .setExecutorThreadCount(16)
                                         .build())
                         .build();
     }
 
     private static void shutdown(
-            ExecutorService workerPool,
             ScheduledExecutorService scheduler,
-            ScheduledExecutorService monitor) {
+            ScheduledExecutorService monitor)
+            throws Exception {
 
-        try {
+        scheduler.shutdown();
+        monitor.shutdown();
 
-            scheduler.shutdown();
-            monitor.shutdown();
-            workerPool.shutdown();
+        publisher.shutdown();
 
-            workerPool.awaitTermination(
-                    30,
-                    TimeUnit.SECONDS
-            );
-
-            publisher.shutdown();
-
-            System.out.println("\n===== FINAL STATS =====");
-            System.out.println(
-                    "Success=" + SUCCESS.get());
-            System.out.println(
-                    "Failure=" + FAILURE.get());
-            System.out.println(
-                    "PeakTPS=" + PEAK_TPS.get());
-
-        } catch (Exception ignored) {
-        }
+        System.out.println("Completed.");
     }
 }
