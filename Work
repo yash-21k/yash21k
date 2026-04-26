@@ -10,92 +10,64 @@ import com.google.pubsub.v1.ProjectTopicName;
 import com.google.pubsub.v1.PubsubMessage;
 import org.threeten.bp.Duration;
 
-import java.util.*;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class PubSubPerfPublisher {
+public class SingleTopicPerfPublisher {
 
     // ================= CONFIG =================
     private static final String PROJECT_ID = "your-project-id";
+    private static final String TOPIC_NAME = "your-topic-name";
 
-    // target successful messages/sec
+    // payload file
+    private static final String FILE_NAME = "message.json";
+
+    // target msgs/sec
     private static final int TOTAL_TPS = 5000;
 
     // run duration
     private static final int DURATION_MINUTES = 10;
 
-    // tuned for i9 / 20 logical processors
-    private static final int WORKER_THREADS = 80;
+    // tuned for your machine
+    private static final int WORKER_THREADS = 32;
 
-    // placeholder text inside files
+    // placeholder inside payload
     private static final String REF_TO_REPLACE = "REFERENCE_NUMBER";
-
     // =========================================
 
-    private static final Map<String, String> TOPIC_MAP = new HashMap<>();
-    private static final List<MessageConfig> MESSAGE_LIST = new ArrayList<>();
-    private static final Map<String, Publisher> PUBLISHERS = new ConcurrentHashMap<>();
+    private static Publisher publisher;
 
     private static final AtomicLong SUCCESS = new AtomicLong();
     private static final AtomicLong FAILURE = new AtomicLong();
     private static final AtomicLong LAST_SUCCESS = new AtomicLong();
     private static final AtomicLong PEAK_TPS = new AtomicLong();
 
-    static {
-        TOPIC_MAP.put("T1", "topic-1");
-        TOPIC_MAP.put("T2", "topic-2");
-        TOPIC_MAP.put("T3", "topic-3");
-        TOPIC_MAP.put("T4", "topic-4");
-        TOPIC_MAP.put("T5", "topic-5");
-        TOPIC_MAP.put("T6", "topic-6");
-        TOPIC_MAP.put("T7", "topic-7");
-
-        MESSAGE_LIST.add(new MessageConfig("msg1.json", "T1"));
-        MESSAGE_LIST.add(new MessageConfig("msg2.json", "T2"));
-        MESSAGE_LIST.add(new MessageConfig("msg3.json", "T3"));
-        MESSAGE_LIST.add(new MessageConfig("msg4.json", "T4"));
-        MESSAGE_LIST.add(new MessageConfig("msg5.json", "T5"));
-        MESSAGE_LIST.add(new MessageConfig("msg6.json", "T6"));
-        MESSAGE_LIST.add(new MessageConfig("msg7.json", "T7"));
-    }
-
     public static void main(String[] args) throws Exception {
 
-        createPublishers();
-        Map<String, String> payloadCache = preloadMessages();
+        createPublisher();
+
+        String basePayload =
+                CommonUtils.GetFileFromResource(FILE_NAME);
 
         ExecutorService workerPool =
                 Executors.newFixedThreadPool(WORKER_THREADS);
+
+        ScheduledExecutorService scheduler =
+                Executors.newScheduledThreadPool(1);
 
         ScheduledExecutorService monitor =
                 Executors.newScheduledThreadPool(1);
 
         long endTime =
-                System.currentTimeMillis() +
-                TimeUnit.MINUTES.toMillis(DURATION_MINUTES);
+                System.currentTimeMillis()
+                        + TimeUnit.MINUTES.toMillis(DURATION_MINUTES);
 
-        // cycles/sec * 7 msgs ~= TOTAL_TPS
-        long flowsPerSecond =
-                Math.max(1, TOTAL_TPS / MESSAGE_LIST.size());
-
-        // one permit = one flow (7 msgs)
-        Semaphore permits = new Semaphore(0);
-
-        // refill permits every second
-        ScheduledExecutorService rateController =
-                Executors.newScheduledThreadPool(1);
-
-        rateController.scheduleAtFixedRate(() -> {
-            permits.release((int) flowsPerSecond);
-        }, 0, 1, TimeUnit.SECONDS);
-
-        // real-time TPS meter
+        // real time TPS meter
         monitor.scheduleAtFixedRate(() -> {
 
             long currentSuccess = SUCCESS.get();
-            long currentFailure = FAILURE.get();
-
             long tps =
                     currentSuccess -
                     LAST_SUCCESS.getAndSet(currentSuccess);
@@ -106,50 +78,48 @@ public class PubSubPerfPublisher {
                     "TPS=" + tps +
                     " | PeakTPS=" + PEAK_TPS.get() +
                     " | Success=" + currentSuccess +
-                    " | Failure=" + currentFailure +
+                    " | Failure=" + FAILURE.get() +
                     " | ActiveThreads=" +
                     Thread.activeCount()
             );
 
         }, 1, 1, TimeUnit.SECONDS);
 
-        // producer loop (max throughput style)
-        while (System.currentTimeMillis() < endTime) {
+        // smooth scheduling every 10 ms
+        int intervalMs = 10;
+        int msgsPerTick =
+                Math.max(1, TOTAL_TPS / (1000 / intervalMs));
 
-            permits.acquire();
+        scheduler.scheduleAtFixedRate(() -> {
 
-            workerPool.submit(() -> {
+            if (System.currentTimeMillis() > endTime) {
+                shutdown(workerPool, scheduler, monitor);
+                return;
+            }
 
-                String flowUuid =
-                        UUID.randomUUID().toString();
+            for (int i = 0; i < msgsPerTick; i++) {
 
-                for (MessageConfig config : MESSAGE_LIST) {
+                workerPool.submit(() -> {
 
-                    String basePayload =
-                            payloadCache.get(config.fileName);
+                    String uuid =
+                            UUID.randomUUID().toString();
 
-                    String updatedPayload =
+                    String payload =
                             basePayload.replace(
                                     REF_TO_REPLACE,
-                                    flowUuid
+                                    uuid
                             );
 
-                    publish(config, updatedPayload);
-                }
-            });
-        }
+                    publish(payload);
+                });
+            }
 
-        shutdown(workerPool, monitor, rateController);
+        }, 0, intervalMs, TimeUnit.MILLISECONDS);
     }
 
-    private static void publish(
-            MessageConfig config,
-            String payload) {
+    private static void publish(String payload) {
 
         try {
-
-            Publisher publisher =
-                    PUBLISHERS.get(config.topicKey);
 
             PubsubMessage message =
                     PubsubMessage.newBuilder()
@@ -183,101 +153,58 @@ public class PubSubPerfPublisher {
         }
     }
 
-    private static void createPublishers()
+    private static void createPublisher()
             throws Exception {
 
-        for (Map.Entry<String, String> entry :
-                TOPIC_MAP.entrySet()) {
-
-            Publisher publisher =
-                    Publisher.newBuilder(
-                                    ProjectTopicName.of(
-                                            PROJECT_ID,
-                                            entry.getValue()))
-                            .setBatchingSettings(
-                                    BatchingSettings
-                                            .newBuilder()
-                                            .setElementCountThreshold(500L)
-                                            .setRequestByteThreshold(
-                                                    5L * 1024L * 1024L)
-                                            .setDelayThreshold(
-                                                    Duration.ofMillis(2))
-                                            .build())
-                            .setExecutorProvider(
-                                    InstantiatingExecutorProvider
-                                            .newBuilder()
-                                            .setExecutorThreadCount(16)
-                                            .build())
-                            .build();
-
-            PUBLISHERS.put(
-                    entry.getKey(),
-                    publisher
-            );
-        }
-    }
-
-    private static Map<String, String>
-    preloadMessages() {
-
-        Map<String, String> cache =
-                new HashMap<>();
-
-        for (MessageConfig config :
-                MESSAGE_LIST) {
-
-            cache.put(
-                    config.fileName,
-                    CommonUtils.GetFileFromResource(
-                            config.fileName)
-            );
-        }
-
-        return cache;
+        publisher =
+                Publisher.newBuilder(
+                                ProjectTopicName.of(
+                                        PROJECT_ID,
+                                        TOPIC_NAME))
+                        .setBatchingSettings(
+                                BatchingSettings
+                                        .newBuilder()
+                                        .setElementCountThreshold(500L)
+                                        .setRequestByteThreshold(
+                                                5L * 1024L * 1024L)
+                                        .setDelayThreshold(
+                                                Duration.ofMillis(2))
+                                        .build())
+                        .setExecutorProvider(
+                                InstantiatingExecutorProvider
+                                        .newBuilder()
+                                        .setExecutorThreadCount(8)
+                                        .build())
+                        .build();
     }
 
     private static void shutdown(
             ExecutorService workerPool,
-            ScheduledExecutorService monitor,
-            ScheduledExecutorService rateController)
-            throws Exception {
+            ScheduledExecutorService scheduler,
+            ScheduledExecutorService monitor) {
 
-        workerPool.shutdown();
-        monitor.shutdown();
-        rateController.shutdown();
+        try {
 
-        workerPool.awaitTermination(
-                30,
-                TimeUnit.SECONDS
-        );
+            scheduler.shutdown();
+            monitor.shutdown();
+            workerPool.shutdown();
 
-        for (Publisher publisher :
-                PUBLISHERS.values()) {
+            workerPool.awaitTermination(
+                    30,
+                    TimeUnit.SECONDS
+            );
 
             publisher.shutdown();
-        }
 
-        System.out.println(
-                "\n===== FINAL STATS =====");
-        System.out.println(
-                "Success=" + SUCCESS.get());
-        System.out.println(
-                "Failure=" + FAILURE.get());
-        System.out.println(
-                "PeakTPS=" + PEAK_TPS.get());
-    }
+            System.out.println("\n===== FINAL STATS =====");
+            System.out.println(
+                    "Success=" + SUCCESS.get());
+            System.out.println(
+                    "Failure=" + FAILURE.get());
+            System.out.println(
+                    "PeakTPS=" + PEAK_TPS.get());
 
-    static class MessageConfig {
-
-        String fileName;
-        String topicKey;
-
-        MessageConfig(
-                String fileName,
-                String topicKey) {
-
-            this.fileName = fileName;
-            this.topicKey = topicKey;
+        } catch (Exception ignored) {
         }
     }
 }
