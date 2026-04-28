@@ -1,119 +1,17 @@
-import com.google.api.core.ApiFuture;
-import com.google.api.gax.batching.BatchingSettings;
-import com.google.api.gax.core.InstantiatingExecutorProvider;
-import com.google.cloud.pubsub.v1.Publisher;
-import com.google.protobuf.ByteString;
-import com.google.pubsub.v1.ProjectTopicName;
-import com.google.pubsub.v1.PubsubMessage;
-import org.threeten.bp.Duration;
+Map<String, String> map = new HashMap<>();
+map.put("GMG_FUF", "HBHK");
 
-import java.util.UUID;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicLong;
+public static String getValue(Map<String, String> map, String key) {
+    String value = map.get(key);
 
-public class Topic5000TPSPublisher {
+    if (value == null) {
+        int lastUnderscore = key.lastIndexOf("_");
 
-    private static final String PROJECT_ID = "your-project-id";
-    private static final String TOPIC_NAME = "your-topic-name";
-    private static final String FILE_NAME = "message.json";
-    private static final String REF_TO_REPLACE = "REFERENCE_NUMBER";
-
-    private static final int TOTAL_TPS = 5000;
-    private static final int DURATION_MINUTES = 10;
-
-    private static Publisher publisher;
-
-    private static final AtomicLong SENT = new AtomicLong();
-
-    public static void main(String[] args) throws Exception {
-
-        createPublisher();
-
-        String basePayload =
-                CommonUtils.GetFileFromResource(FILE_NAME);
-
-        ScheduledExecutorService scheduler =
-                Executors.newScheduledThreadPool(1);
-
-        ScheduledExecutorService monitor =
-                Executors.newScheduledThreadPool(1);
-
-        long endTime =
-                System.currentTimeMillis()
-                        + TimeUnit.MINUTES.toMillis(DURATION_MINUTES);
-
-        int tickMs = 100;
-        int msgsPerTick = TOTAL_TPS / (1000 / tickMs); // 500
-
-        monitor.scheduleAtFixedRate(() -> {
-            System.out.println(
-                    "Sent=" + SENT.get()
-            );
-        },1,1,TimeUnit.SECONDS);
-
-        scheduler.scheduleAtFixedRate(() -> {
-
-            if (System.currentTimeMillis() > endTime) {
-                shutdown(scheduler, monitor);
-                return;
-            }
-
-            for (int i = 0; i < msgsPerTick; i++) {
-
-                String uuid = UUID.randomUUID().toString();
-
-                String payload =
-                        basePayload.replace(
-                                REF_TO_REPLACE,
-                                uuid
-                        );
-
-                PubsubMessage message =
-                        PubsubMessage.newBuilder()
-                                .setData(
-                                        ByteString.copyFromUtf8(payload))
-                                .build();
-
-                publisher.publish(message);
-                SENT.incrementAndGet();
-            }
-
-        }, 0, tickMs, TimeUnit.MILLISECONDS);
+        if (lastUnderscore > 0) {
+            String baseKey = key.substring(0, lastUnderscore);
+            value = map.get(baseKey);
+        }
     }
 
-    private static void createPublisher() throws Exception {
-
-        publisher =
-                Publisher.newBuilder(
-                                ProjectTopicName.of(
-                                        PROJECT_ID,
-                                        TOPIC_NAME))
-                        .setBatchingSettings(
-                                BatchingSettings.newBuilder()
-                                        .setElementCountThreshold(1000L)
-                                        .setRequestByteThreshold(
-                                                10L * 1024L * 1024L)
-                                        .setDelayThreshold(
-                                                Duration.ofMillis(10))
-                                        .build())
-                        .setExecutorProvider(
-                                InstantiatingExecutorProvider
-                                        .newBuilder()
-                                        .setExecutorThreadCount(16)
-                                        .build())
-                        .build();
-    }
-
-    private static void shutdown(
-            ScheduledExecutorService scheduler,
-            ScheduledExecutorService monitor)
-            throws Exception {
-
-        scheduler.shutdown();
-        monitor.shutdown();
-
-        publisher.shutdown();
-
-        System.out.println("Completed.");
-    }
+    return value;
 }
