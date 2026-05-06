@@ -1,17 +1,16 @@
-Map<String, String> map = new HashMap<>();
-map.put("GMG_FUF", "HBHK");
-
-public static String getValue(Map<String, String> map, String key) {
-    String value = map.get(key);
-
-    if (value == null) {
-        int lastUnderscore = key.lastIndexOf("_");
-
-        if (lastUnderscore > 0) {
-            String baseKey = key.substring(0, lastUnderscore);
-            value = map.get(baseKey);
-        }
+public static String extractXml(String source) {
+    if (source == null || source.isBlank()) {
+        return source;
     }
 
-    return value;
+    int xmlStartIndex = source.indexOf("<?xml");
+    if (xmlStartIndex == -1) {
+        xmlStartIndex = source.indexOf("<");
+    }
+
+    if (xmlStartIndex == -1) {
+        return source;
+    }
+
+    return source.substring(xmlStartIndex);
 }
