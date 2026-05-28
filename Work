@@ -1,16 +1,1 @@
-public static String extractXml(String source) {
-    if (source == null || source.isBlank()) {
-        return source;
-    }
-
-    int xmlStartIndex = source.indexOf("<?xml");
-    if (xmlStartIndex == -1) {
-        xmlStartIndex = source.indexOf("<");
-    }
-
-    if (xmlStartIndex == -1) {
-        return source;
-    }
-
-    return source.substring(xmlStartIndex);
-}
+REGEXP_EXTRACT(safestore.body, r':F72:(.*?)<') AS F72_Value
