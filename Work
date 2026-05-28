@@ -1,1 +1,17 @@
-72:([^\r\n]+)
+SELECT 
+    source,
+    
+    REGEXP_EXTRACT(source, r'72:([^\r\n]+)') AS F72_Value,
+
+    CASE 
+        WHEN source LIKE '%:MID:%' 
+            THEN 'Pseudo MT Message'
+        ELSE 'Normal MT Message'
+    END AS Message_Type
+
+FROM (
+    SELECT source
+    FROM `hsbc-8578861-pd1-dev.pdp_eu_w01_po_raw_tab_sit_dev0000.w01f_no_rt`
+    WHERE TIMESTAMP_TRUNC(df_insertion_timestamp, DAY) >= TIMESTAMP('2026-05-15')
+      AND source LIKE '%72:%'
+)
