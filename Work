@@ -1,1 +1,1 @@
-regexp_extract(source_column, '72:(.*?)(\\n|$)', 1)
+72:([^\r\n]+)
