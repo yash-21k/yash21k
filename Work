@@ -1,1 +1,4 @@
-REGEXP_EXTRACT(safestore.body, r':F72:(.*?)<') AS F72_Value
+REGEXP_EXTRACT(
+  safestore.body,
+  r'(?s):72F:(.*?)(?=:\w{3}:|$)'
+) AS F72_VALUE
