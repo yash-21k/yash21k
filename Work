@@ -1,6 +1,7 @@
 SELECT
   *,
-  SUBSTR(payload, 1, STRPOS(payload, '{') - 1) AS extracted_content
-FROM `gmg-rt`
-WHERE payload LIKE 'DAT%'
-  AND STRPOS(payload, '{') > 0;
+  CASE
+    WHEN payload LIKE 'DAT%' THEN
+      REGEXP_EXTRACT(payload, r'^[^{]*')
+  END AS extracted_content
+FROM `gmg-rt`;
