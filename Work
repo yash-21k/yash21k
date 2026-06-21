@@ -1,21 +1,21 @@
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.google.cloud.spanner.Struct;
+import com.google.gson.*;
+import com.google.protobuf.ByteString;
 
-ObjectMapper mapper = new ObjectMapper();
+import java.lang.reflect.Type;
 
-while (rs.next()) {
-    Struct row = rs.getCurrentRowAsStruct();
-
-    ObjectNode json = mapper.createObjectNode();
-
-    for (Type.StructField field : row.getType().getStructFields()) {
-        String name = field.getName();
-        json.put(name, String.valueOf(row.getValue(name)));
-    }
-
-    System.out.println(
-        mapper.writerWithDefaultPrettyPrinter()
-              .writeValueAsString(json)
-    );
-}
+Gson gson = new GsonBuilder()
+    .registerTypeAdapter(ByteString.class, new JsonSerializer<ByteString>() {
+        @Override
+        public JsonElement serialize(ByteString src, Type typeOfSrc,
+                                     JsonSerializationContext context) {
+            return new JsonPrimitive(src.toStringUtf8());
+        }
+    })
+    .registerTypeAdapter(ByteString.class, new JsonDeserializer<ByteString>() {
+        @Override
+        public ByteString deserialize(JsonElement json, Type typeOfT,
+                                      JsonDeserializationContext context) {
+            return ByteString.copyFromUtf8(json.getAsString());
+        }
+    })
+    .create();
