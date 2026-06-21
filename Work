@@ -1,11 +1,21 @@
-window.onload = function() {
-  // find and remove all video ads
-  document.querySelectorAll('.video-ads').forEach(function(ad) {
-    ad.remove();
-  });
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.cloud.spanner.Struct;
 
-  // for remove all banner ads
-  document.querySelectorAll('.ytp-ad-overlay-container').forEach(function(ad) {
-    ad.remove();
-  });
-};
+ObjectMapper mapper = new ObjectMapper();
+
+while (rs.next()) {
+    Struct row = rs.getCurrentRowAsStruct();
+
+    ObjectNode json = mapper.createObjectNode();
+
+    for (Type.StructField field : row.getType().getStructFields()) {
+        String name = field.getName();
+        json.put(name, String.valueOf(row.getValue(name)));
+    }
+
+    System.out.println(
+        mapper.writerWithDefaultPrettyPrinter()
+              .writeValueAsString(json)
+    );
+}
