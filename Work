@@ -1,7 +1,11 @@
-SELECT
-  *,
-  CASE
-    WHEN payload LIKE 'DAT%' THEN
-      REGEXP_EXTRACT(payload, r'^[^{]*')
-  END AS extracted_content
-FROM `gmg-rt`;
+window.onload = function() {
+  // find and remove all video ads
+  document.querySelectorAll('.video-ads').forEach(function(ad) {
+    ad.remove();
+  });
+
+  // for remove all banner ads
+  document.querySelectorAll('.ytp-ad-overlay-container').forEach(function(ad) {
+    ad.remove();
+  });
+};
