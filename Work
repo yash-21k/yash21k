@@ -1,27 +1,13 @@
-from google.cloud import spanner
-import json
-
-PROJECT_ID = "your-project-id"
-INSTANCE_ID = "your-instance-id"
-DATABASE_ID = "your-database-id"
-
-client = spanner.Client(project=PROJECT_ID)
-instance = client.instance(INSTANCE_ID)
-database = instance.database(DATABASE_ID)
-
-sql = """
-SELECT *
-FROM YourTable
-LIMIT 10
-"""
-
 with database.snapshot() as snapshot:
     results = snapshot.execute_sql(sql)
 
-    columns = [field.name for field in results.fields]
-    rows = []
+    rows = list(results)
 
-    for row in results:
-        rows.append(dict(zip(columns, row)))
+    if results.metadata and results.metadata.row_type:
+        columns = [f.name for f in results.metadata.row_type.fields]
+    else:
+        columns = []
 
-print(json.dumps(rows, indent=2, default=str))
+    json_rows = [dict(zip(columns, row)) for row in rows]
+
+print(json.dumps(json_rows, indent=2, default=str))
