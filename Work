@@ -1,21 +1,27 @@
-import com.google.gson.*;
-import com.google.protobuf.ByteString;
+from google.cloud import spanner
+import json
 
-import java.lang.reflect.Type;
+PROJECT_ID = "your-project-id"
+INSTANCE_ID = "your-instance-id"
+DATABASE_ID = "your-database-id"
 
-Gson gson = new GsonBuilder()
-    .registerTypeAdapter(ByteString.class, new JsonSerializer<ByteString>() {
-        @Override
-        public JsonElement serialize(ByteString src, Type typeOfSrc,
-                                     JsonSerializationContext context) {
-            return new JsonPrimitive(src.toStringUtf8());
-        }
-    })
-    .registerTypeAdapter(ByteString.class, new JsonDeserializer<ByteString>() {
-        @Override
-        public ByteString deserialize(JsonElement json, Type typeOfT,
-                                      JsonDeserializationContext context) {
-            return ByteString.copyFromUtf8(json.getAsString());
-        }
-    })
-    .create();
+client = spanner.Client(project=PROJECT_ID)
+instance = client.instance(INSTANCE_ID)
+database = instance.database(DATABASE_ID)
+
+sql = """
+SELECT *
+FROM YourTable
+LIMIT 10
+"""
+
+with database.snapshot() as snapshot:
+    results = snapshot.execute_sql(sql)
+
+    columns = [field.name for field in results.fields]
+    rows = []
+
+    for row in results:
+        rows.append(dict(zip(columns, row)))
+
+print(json.dumps(rows, indent=2, default=str))
