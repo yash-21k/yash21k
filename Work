@@ -1,13 +1,14 @@
-with database.snapshot() as snapshot:
-    results = snapshot.execute_sql(sql)
+Dear [Manager's Name],
 
-    rows = list(results)
+I hope you are doing well.
 
-    if results.metadata and results.metadata.row_type:
-        columns = [f.name for f in results.metadata.row_type.fields]
-    else:
-        columns = []
+I would like to request your approval to work from home due to certain medical constraints within my family. My parent organization requires a formal approval from my reporting manager to facilitate this arrangement.
 
-    json_rows = [dict(zip(columns, row)) for row in rows]
+Please be assured that this will not impact my work commitments or availability. If required, I am willing to report to the HSBC Pune office whenever my presence is needed.
 
-print(json.dumps(json_rows, indent=2, default=str))
+I would be grateful if you could approve this request. Please let me know if you need any additional information or documentation.
+
+Thank you for your understanding and support.
+
+Kind regards,
+Yash Khadke
