@@ -1,14 +1,11 @@
-Dear [Manager's Name],
+public static Timestamp parseSpannerTimestamp(String input) {
+    DateTimeFormatter formatter =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS z");
 
-I hope you are doing well.
+    Instant instant = formatter.parse(input, Instant::from);
 
-I would like to request your approval to work from home due to certain medical constraints within my family. My parent organization requires a formal approval from my reporting manager to facilitate this arrangement.
-
-Please be assured that this will not impact my work commitments or availability. If required, I am willing to report to the HSBC Pune office whenever my presence is needed.
-
-I would be grateful if you could approve this request. Please let me know if you need any additional information or documentation.
-
-Thank you for your understanding and support.
-
-Kind regards,
-Yash Khadke
+    return Timestamp.ofTimeSecondsAndNanos(
+            instant.getEpochSecond(),
+            instant.getNano()
+    );
+}
