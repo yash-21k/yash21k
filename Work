@@ -1,11 +1,18 @@
-public static Timestamp parseSpannerTimestamp(String input) {
-    DateTimeFormatter formatter =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS z");
+private static Timestamp parseTimestamp(String value, String[] timestampFormats) {
 
-    Instant instant = formatter.parse(input, Instant::from);
+    for (String format : timestampFormats) {
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format);
 
-    return Timestamp.ofTimeSecondsAndNanos(
-            instant.getEpochSecond(),
-            instant.getNano()
-    );
+            Instant instant = formatter.parse(value, Instant::from);
+
+            return Timestamp.ofTimeSecondsAndNanos(
+                    instant.getEpochSecond(),
+                    instant.getNano());
+        } catch (Exception ignored) {
+        }
+    }
+
+    throw new IllegalArgumentException(
+            "Unsupported timestamp format: " + value);
 }
