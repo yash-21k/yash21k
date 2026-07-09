@@ -1,18 +1,116 @@
-private static Timestamp parseTimestamp(String value, String[] timestampFormats) {
+import com.google.cloud.pubsub.v1.Publisher;
+import com.google.protobuf.ByteString;
+import com.google.pubsub.v1.ProjectTopicName;
+import com.google.pubsub.v1.PubsubMessage;
 
-    for (String format : timestampFormats) {
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+public class DualTopicPublisher {
+
+    // ================= CONFIG =================
+    private static final String PROJECT_ID = "your-project-id";
+
+    private static final String TOPIC_1 = "topic-1";
+    private static final String TOPIC_2 = "topic-2";
+
+    // TPS per topic
+    private static final int TPS = 100;
+
+    // Duration to run
+    private static final int DURATION_MINUTES = 10;
+
+    // Replace this placeholder with generated UUID
+    private static final String TRANSACTION_PLACEHOLDER = "{{TRANSACTION_ID}}";
+
+    private static final String MESSAGE_TEMPLATE_1 =
+            """
+            {
+              "transactionId":"{{TRANSACTION_ID}}",
+              "engine":"AMH",
+              "status":"RECEIVED"
+            }
+            """;
+
+    private static final String MESSAGE_TEMPLATE_2 =
+            """
+            {
+              "transactionId":"{{TRANSACTION_ID}}",
+              "engine":"GPE",
+              "status":"PROCESSED"
+            }
+            """;
+    // ==========================================
+
+    public static void main(String[] args) throws Exception {
+
+        Publisher publisher1 = Publisher.newBuilder(
+                ProjectTopicName.of(PROJECT_ID, TOPIC_1))
+                .build();
+
+        Publisher publisher2 = Publisher.newBuilder(
+                ProjectTopicName.of(PROJECT_ID, TOPIC_2))
+                .build();
+
+        long totalTransactions = (long) TPS * 60 * DURATION_MINUTES;
+
+        System.out.println("Starting publisher...");
+        System.out.println("TPS per topic: " + TPS);
+        System.out.println("Duration: " + DURATION_MINUTES + " minutes");
+        System.out.println("Total transaction pairs: " + totalTransactions);
+
         try {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format);
+            for (long second = 0; second < DURATION_MINUTES * 60L; second++) {
 
-            Instant instant = formatter.parse(value, Instant::from);
+                long startTime = System.currentTimeMillis();
 
-            return Timestamp.ofTimeSecondsAndNanos(
-                    instant.getEpochSecond(),
-                    instant.getNano());
-        } catch (Exception ignored) {
+                for (int i = 0; i < TPS; i++) {
+
+                    // Same UUID for both messages
+                    String transactionId = UUID.randomUUID().toString();
+
+                    String message1 = MESSAGE_TEMPLATE_1.replace(
+                            TRANSACTION_PLACEHOLDER,
+                            transactionId
+                    );
+
+                    String message2 = MESSAGE_TEMPLATE_2.replace(
+                            TRANSACTION_PLACEHOLDER,
+                            transactionId
+                    );
+
+                    publisher1.publish(
+                            PubsubMessage.newBuilder()
+                                    .setData(ByteString.copyFromUtf8(message1))
+                                    .build()
+                    );
+
+                    publisher2.publish(
+                            PubsubMessage.newBuilder()
+                                    .setData(ByteString.copyFromUtf8(message2))
+                                    .build()
+                    );
+                }
+
+                // Maintain TPS accurately
+                long elapsed = System.currentTimeMillis() - startTime;
+                long sleepTime = 1000 - elapsed;
+
+                if (sleepTime > 0) {
+                    Thread.sleep(sleepTime);
+                }
+
+                System.out.println("Completed second : " + (second + 1));
+            }
+
+        } finally {
+            publisher1.shutdown();
+            publisher2.shutdown();
+
+            publisher1.awaitTermination(1, TimeUnit.MINUTES);
+            publisher2.awaitTermination(1, TimeUnit.MINUTES);
+
+            System.out.println("Publishing completed.");
         }
     }
-
-    throw new IllegalArgumentException(
-            "Unsupported timestamp format: " + value);
 }
