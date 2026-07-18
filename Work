@@ -1,68 +1,104 @@
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.nio.file.Path;
 
 public class GenerateFieldMetadataTest {
 
     @Test
     void generateFields() throws Exception {
 
-        String csvPath = "C:/temp/alter_commands.csv"; // Change path
+        String filePath = "C:/temp/alter_commands.csv"; // Change this
 
-        Pattern pattern = Pattern.compile(
-                "ADD\\s+COLUMN\\s+(\\w+)\\s+([A-Z]+)(?:\\((\\d+)\\))?",
-                Pattern.CASE_INSENSITIVE);
-
-        Files.lines(Paths.get(csvPath))
-                .filter(line -> !line.trim().isEmpty())
-                .forEach(line -> {
-
-                    Matcher matcher = pattern.matcher(line);
-
-                    if (matcher.find()) {
-
-                        String columnName = matcher.group(1);
-                        String spannerType = matcher.group(2).toUpperCase();
-                        String length = matcher.group(3);
-
-                        String javaType = getJavaType(spannerType);
-
-                        System.out.println(
-                                "@FieldMetaData(datatype = \"" + javaType + "\"" +
-                                        (length != null ? ", length = " + length : "") +
-                                        ", actualFieldName = \"" + columnName + "\"" +
-                                        ", description = \"" + columnName + " for Message\")");
-
-                        System.out.println(
-                                "private " + javaType + " " + columnName + ";");
-
-                        System.out.println();
-                    }
-                });
+        Files.lines(Path.of(filePath))
+                .map(String::trim)
+                .filter(line -> !line.isEmpty())
+                .forEach(this::processLine);
     }
 
-    private static String getJavaType(String spannerType) {
+    private void processLine(String line) {
+
+        line = line.replace(";", "");
+
+        int index = line.toUpperCase().indexOf("ADD COLUMN");
+        if (index == -1) {
+            return;
+        }
+
+        String remaining = line.substring(index + "ADD COLUMN".length()).trim();
+
+        String[] parts = remaining.split("\\s+");
+
+        if (parts.length < 2) {
+            return;
+        }
+
+        String columnName = parts[0].replace("`", "");
+        String spannerType = parts[1].toUpperCase();
+
+        String length = null;
+
+        if (spannerType.contains("(")) {
+            length = spannerType.substring(
+                    spannerType.indexOf('(') + 1,
+                    spannerType.indexOf(')'));
+
+            spannerType = spannerType.substring(0, spannerType.indexOf('('));
+        }
+
+        String javaType = getJavaType(spannerType);
+
+        StringBuilder output = new StringBuilder();
+
+        output.append("@FieldMetaData(datatype = \"")
+                .append(spannerType)
+                .append("\"");
+
+        if (length != null) {
+            output.append(", length = ").append(length);
+        }
+
+        output.append(", actualFieldName = \"")
+                .append(columnName)
+                .append("\"");
+
+        output.append(", description = \"")
+                .append(columnName)
+                .append(" for Message\")");
+
+        System.out.println(output);
+        System.out.println("private " + javaType + " " + columnName + ";");
+        System.out.println();
+    }
+
+    private String getJavaType(String spannerType) {
+
         switch (spannerType) {
             case "STRING":
                 return "String";
+
             case "INT64":
                 return "Long";
+
             case "FLOAT64":
                 return "Double";
+
+            case "NUMERIC":
+                return "BigDecimal";
+
             case "BOOL":
             case "BOOLEAN":
                 return "Boolean";
+
             case "TIMESTAMP":
                 return "Timestamp";
+
             case "DATE":
                 return "Date";
-            case "NUMERIC":
-                return "BigDecimal";
+
             case "BYTES":
                 return "ByteArray";
+
             default:
                 return "String";
         }
