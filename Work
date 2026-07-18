@@ -2,37 +2,69 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-public class CsvMappingTest {
+public class GenerateFieldMetadataTest {
 
     @Test
-    void generateMappings() throws Exception {
+    void generateFields() throws Exception {
 
-        String csv1File = "src/test/resources/csv1.csv";
-        String csv2File = "src/test/resources/csv2.csv";
+        String csvPath = "C:/temp/alter_commands.csv"; // Change path
 
-        List<String> list1 = new ArrayList<>();
-        List<String> list2 = new ArrayList<>();
+        Pattern pattern = Pattern.compile(
+                "ADD\\s+COLUMN\\s+(\\w+)\\s+([A-Z]+)(?:\\((\\d+)\\))?",
+                Pattern.CASE_INSENSITIVE);
 
-        // Read first CSV
-        for (String line : Files.readAllLines(Paths.get(csv1File))) {
-            for (String value : line.split(",")) {
-                list1.add(value.trim());
-            }
-        }
+        Files.lines(Paths.get(csvPath))
+                .filter(line -> !line.trim().isEmpty())
+                .forEach(line -> {
 
-        // Read second CSV
-        for (String line : Files.readAllLines(Paths.get(csv2File))) {
-            for (String value : line.split(",")) {
-                list2.add(value.trim());
-            }
-        }
+                    Matcher matcher = pattern.matcher(line);
 
-        // Print mappings
-        for (int i = 0; i < Math.min(list1.size(), list2.size()); i++) {
-            System.out.println("'" + list1.get(i) + "' : '" + list2.get(i) + "', \\");
+                    if (matcher.find()) {
+
+                        String columnName = matcher.group(1);
+                        String spannerType = matcher.group(2).toUpperCase();
+                        String length = matcher.group(3);
+
+                        String javaType = getJavaType(spannerType);
+
+                        System.out.println(
+                                "@FieldMetaData(datatype = \"" + javaType + "\"" +
+                                        (length != null ? ", length = " + length : "") +
+                                        ", actualFieldName = \"" + columnName + "\"" +
+                                        ", description = \"" + columnName + " for Message\")");
+
+                        System.out.println(
+                                "private " + javaType + " " + columnName + ";");
+
+                        System.out.println();
+                    }
+                });
+    }
+
+    private static String getJavaType(String spannerType) {
+        switch (spannerType) {
+            case "STRING":
+                return "String";
+            case "INT64":
+                return "Long";
+            case "FLOAT64":
+                return "Double";
+            case "BOOL":
+            case "BOOLEAN":
+                return "Boolean";
+            case "TIMESTAMP":
+                return "Timestamp";
+            case "DATE":
+                return "Date";
+            case "NUMERIC":
+                return "BigDecimal";
+            case "BYTES":
+                return "ByteArray";
+            default:
+                return "String";
         }
     }
 }
