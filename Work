@@ -1,106 +1,16 @@
-import org.junit.jupiter.api.Test;
+PullRequest pullRequest = PullRequest.newBuilder()
+        .setSubscription(subscriptionName.toString())
+        .setMaxMessages(1000)
+        .build();
 
-import java.nio.file.Files;
-import java.nio.file.Path;
+PullResponse response = subscriberStub.pullCallable().call(pullRequest);
 
-public class GenerateFieldMetadataTest {
+for (ReceivedMessage message : response.getReceivedMessagesList()) {
+    System.out.println(message.getMessage().getData().toStringUtf8());
 
-    @Test
-    void generateFields() throws Exception {
-
-        String filePath = "C:/temp/alter_commands.csv"; // Change this
-
-        Files.lines(Path.of(filePath))
-                .map(String::trim)
-                .filter(line -> !line.isEmpty())
-                .forEach(this::processLine);
-    }
-
-    private void processLine(String line) {
-
-        line = line.replace(";", "");
-
-        int index = line.toUpperCase().indexOf("ADD COLUMN");
-        if (index == -1) {
-            return;
-        }
-
-        String remaining = line.substring(index + "ADD COLUMN".length()).trim();
-
-        String[] parts = remaining.split("\\s+");
-
-        if (parts.length < 2) {
-            return;
-        }
-
-        String columnName = parts[0].replace("`", "");
-        String spannerType = parts[1].toUpperCase();
-
-        String length = null;
-
-        if (spannerType.contains("(")) {
-            length = spannerType.substring(
-                    spannerType.indexOf('(') + 1,
-                    spannerType.indexOf(')'));
-
-            spannerType = spannerType.substring(0, spannerType.indexOf('('));
-        }
-
-        String javaType = getJavaType(spannerType);
-
-        StringBuilder output = new StringBuilder();
-
-        output.append("@FieldMetaData(datatype = \"")
-                .append(spannerType)
-                .append("\"");
-
-        if (length != null) {
-            output.append(", length = ").append(length);
-        }
-
-        output.append(", actualFieldName = \"")
-                .append(columnName)
-                .append("\"");
-
-        output.append(", description = \"")
-                .append(columnName)
-                .append(" for Message\")");
-
-        System.out.println(output);
-        System.out.println("private " + javaType + " " + columnName + ";");
-        System.out.println();
-    }
-
-    private String getJavaType(String spannerType) {
-
-        switch (spannerType) {
-            case "STRING":
-                return "String";
-
-            case "INT64":
-                return "Long";
-
-            case "FLOAT64":
-                return "Double";
-
-            case "NUMERIC":
-                return "BigDecimal";
-
-            case "BOOL":
-            case "BOOLEAN":
-                return "Boolean";
-
-            case "TIMESTAMP":
-                return "Timestamp";
-
-            case "DATE":
-                return "Date";
-
-            case "BYTES":
-                return "ByteArray";
-
-            default:
-                return "String";
-        }
-    }
+    subscriberStub.acknowledgeCallable().call(
+        AcknowledgeRequest.newBuilder()
+            .setSubscription(subscriptionName.toString())
+            .addAckIds(message.getAckId())
+            .build());
 }
