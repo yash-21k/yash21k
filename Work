@@ -1,72 +1,141 @@
-package com.example.pubsub;
+import com.google.cloud.spanner.v1.SpannerClient;
+import com.google.cloud.spanner.v1.SpannerSettings;
+import com.google.protobuf.Timestamp;
+import com.google.spanner.v1.DatabaseName;
+import com.google.spanner.v1.DeleteSessionRequest;
+import com.google.spanner.v1.ListSessionsRequest;
+import com.google.spanner.v1.Session;
 
-import com.google.api.core.ApiFuture;
-import com.google.cloud.pubsub.v1.AckReplyConsumer;
-import com.google.cloud.pubsub.v1.MessageReceiver;
-import com.google.cloud.pubsub.v1.Publisher;
-import com.google.cloud.pubsub.v1.Subscriber;
-import com.google.pubsub.v1.ProjectSubscriptionName;
-import com.google.pubsub.v1.ProjectTopicName;
-import com.google.pubsub.v1.PubsubMessage;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
-public class SubscriptionToTopic {
+/**
+ * Force-deletes Spanner sessions that have been idle longer than a configured
+ * threshold, using the low-level SpannerClient (sessions.list / sessions.delete).
+ *
+ * This runs COMPLETELY OUTSIDE your Dataflow pipeline / application code.
+ * It talks directly to the Spanner session store, so it works regardless of
+ * whether your Dataflow job drained cleanly, was cancelled, or got SIGKILLed
+ * before @Teardown or any shutdown hook could run.
+ *
+ * This build runs INTERACTIVELY: it lists every idle session first and does
+ * NOT delete anything until you review the list and type "delete" at the
+ * prompt. Run it directly from a terminal (java -jar ... or via your IDE).
+ * If you later want an unattended/scheduled version (Cloud Scheduler + Cloud
+ * Run Job, no prompt), ask and I'll give you that variant separately -
+ * mixing both in one file gets confusing to run safely.
+ *
+ * Required IAM permissions on the service account running this:
+ *   - spanner.sessions.list
+ *   - spanner.sessions.delete
+ * (Bundled in roles/spanner.databaseUser or roles/spanner.admin.)
+ *
+ * Maven dependency (pom.xml):
+ *   <dependency>
+ *     <groupId>com.google.cloud</groupId>
+ *     <artifactId>google-cloud-spanner</artifactId>
+ *     <version>6.+</version>
+ *   </dependency>
+ */
+public class SpannerIdleSessionCleaner {
 
-    private static final String PROJECT_ID = "your-project-id";
-    private static final String SUBSCRIPTION_ID = "your-subscription-id";
-    private static final String TOPIC_ID = "your-destination-topic";
+    private static final Logger logger = Logger.getLogger(SpannerIdleSessionCleaner.class.getName());
 
     public static void main(String[] args) throws Exception {
+        // ---- Configuration ----
+        String projectId = System.getenv().getOrDefault("SPANNER_PROJECT_ID", "your-project-id");
+        String instanceId = System.getenv().getOrDefault("SPANNER_INSTANCE_ID", "your-instance-id");
+        String databaseId = System.getenv().getOrDefault("SPANNER_DATABASE_ID", "your-database-id");
 
-        ProjectTopicName topicName =
-                ProjectTopicName.of(PROJECT_ID, TOPIC_ID);
+        // Idle threshold in minutes. Sessions whose approximateLastUseTime is
+        // older than this get force-deleted. Set via env var so you can tune
+        // it without redeploying.
+        int idleThresholdMinutes = Integer.parseInt(
+                System.getenv().getOrDefault("IDLE_THRESHOLD_MINUTES", "10"));
 
-        Publisher publisher = Publisher.newBuilder(topicName).build();
+        DatabaseName databaseName = DatabaseName.of(projectId, instanceId, databaseId);
 
-        ProjectSubscriptionName subscriptionName =
-                ProjectSubscriptionName.of(PROJECT_ID, SUBSCRIPTION_ID);
+        logger.info(String.format(
+                "Scanning idle sessions for %s | threshold=%d min",
+                databaseName, idleThresholdMinutes));
 
-        MessageReceiver receiver = new MessageReceiver() {
-            @Override
-            public void receiveMessage(PubsubMessage message,
-                                       AckReplyConsumer consumer) {
+        try (SpannerClient spannerClient = SpannerClient.create(SpannerSettings.newBuilder().build())) {
+            Instant cutoff = Instant.now().minusSeconds(idleThresholdMinutes * 60L);
 
-                try {
+            // --- Step 1: list every idle session first, delete nothing yet ---
+            List<Session> idleSessions = new ArrayList<>();
+            int scanned = 0;
 
-                    PubsubMessage newMessage =
-                            PubsubMessage.newBuilder()
-                                    .setData(message.getData())
-                                    .putAllAttributes(message.getAttributesMap())
-                                    .build();
+            ListSessionsRequest listRequest = ListSessionsRequest.newBuilder()
+                    .setDatabase(databaseName.toString())
+                    .setPageSize(1000) // max page size per call; paging handled by iterateAll()
+                    .build();
 
-                    ApiFuture<String> future = publisher.publish(newMessage);
-
-                    String messageId = future.get();
-
-                    System.out.println(
-                            "Republished message: " + messageId);
-
-                    consumer.ack();
-
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    consumer.nack();
+            for (Session session : spannerClient.listSessions(listRequest).iterateAll()) {
+                scanned++;
+                Instant lastUsed = toInstant(session.getApproximateLastUseTime());
+                if (lastUsed.isBefore(cutoff)) {
+                    idleSessions.add(session);
                 }
             }
-        };
 
-        Subscriber subscriber =
-                Subscriber.newBuilder(subscriptionName, receiver).build();
+            System.out.println();
+            System.out.println("Scanned " + scanned + " total session(s).");
 
-        subscriber.startAsync().awaitRunning();
+            if (idleSessions.isEmpty()) {
+                System.out.println("No sessions idle for more than " + idleThresholdMinutes + " min. Nothing to do.");
+                return;
+            }
 
-        System.out.println("Listening... Press Ctrl+C to stop.");
+            System.out.println("Found " + idleSessions.size() + " session(s) idle for more than "
+                    + idleThresholdMinutes + " min:");
+            System.out.println();
+            for (Session session : idleSessions) {
+                System.out.println("  " + session.getName()
+                        + "  | lastUsed=" + toInstant(session.getApproximateLastUseTime()));
+            }
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("Stopping...");
-            subscriber.stopAsync();
-            publisher.shutdown();
-        }));
+            // --- Step 2: wait for explicit confirmation before deleting anything ---
+            System.out.println();
+            System.out.print("Type \"delete\" and press Enter to delete ALL " + idleSessions.size()
+                    + " session(s) above. Anything else cancels: ");
 
-        subscriber.awaitTerminated();
+            Scanner scanner = new Scanner(System.in);
+            String confirmation = scanner.hasNextLine() ? scanner.nextLine().trim() : "";
+
+            if (!"delete".equals(confirmation)) {
+                System.out.println("Confirmation not received. No sessions were deleted.");
+                return;
+            }
+
+            // --- Step 3: delete, now that the user has confirmed ---
+            int deleted = 0;
+            for (Session session : idleSessions) {
+                try {
+                    spannerClient.deleteSession(
+                            DeleteSessionRequest.newBuilder()
+                                    .setName(session.getName())
+                                    .build());
+                    deleted++;
+                    System.out.println("Deleted: " + session.getName());
+                } catch (Exception e) {
+                    // NOT_FOUND is expected/harmless: Spanner may have already
+                    // GC'd the session itself between list and delete.
+                    logger.log(Level.WARNING, "Failed to delete session " + session.getName(), e);
+                    System.out.println("Failed to delete: " + session.getName() + " (" + e.getMessage() + ")");
+                }
+            }
+
+            System.out.println();
+            System.out.println("Done. Deleted " + deleted + " of " + idleSessions.size() + " session(s).");
+        }
+    }
+
+    private static Instant toInstant(Timestamp ts) {
+        return Instant.ofEpochSecond(ts.getSeconds(), ts.getNanos());
     }
 }
