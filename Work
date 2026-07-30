@@ -1,141 +1,47 @@
-import com.google.cloud.spanner.v1.SpannerClient;
-import com.google.cloud.spanner.v1.SpannerSettings;
-import com.google.protobuf.Timestamp;
-import com.google.spanner.v1.DatabaseName;
-import com.google.spanner.v1.DeleteSessionRequest;
-import com.google.spanner.v1.ListSessionsRequest;
-import com.google.spanner.v1.Session;
+import com.google.cloud.spanner.DatabaseAdminClient;
+import com.google.cloud.spanner.DatabaseAdminSettings;
 
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-/**
- * Force-deletes Spanner sessions that have been idle longer than a configured
- * threshold, using the low-level SpannerClient (sessions.list / sessions.delete).
- *
- * This runs COMPLETELY OUTSIDE your Dataflow pipeline / application code.
- * It talks directly to the Spanner session store, so it works regardless of
- * whether your Dataflow job drained cleanly, was cancelled, or got SIGKILLed
- * before @Teardown or any shutdown hook could run.
- *
- * This build runs INTERACTIVELY: it lists every idle session first and does
- * NOT delete anything until you review the list and type "delete" at the
- * prompt. Run it directly from a terminal (java -jar ... or via your IDE).
- * If you later want an unattended/scheduled version (Cloud Scheduler + Cloud
- * Run Job, no prompt), ask and I'll give you that variant separately -
- * mixing both in one file gets confusing to run safely.
- *
- * Required IAM permissions on the service account running this:
- *   - spanner.sessions.list
- *   - spanner.sessions.delete
- * (Bundled in roles/spanner.databaseUser or roles/spanner.admin.)
- *
- * Maven dependency (pom.xml):
- *   <dependency>
- *     <groupId>com.google.cloud</groupId>
- *     <artifactId>google-cloud-spanner</artifactId>
- *     <version>6.+</version>
- *   </dependency>
- */
-public class SpannerIdleSessionCleaner {
-
-    private static final Logger logger = Logger.getLogger(SpannerIdleSessionCleaner.class.getName());
+public class SpannerDDLExtractor {
 
     public static void main(String[] args) throws Exception {
-        // ---- Configuration ----
-        String projectId = System.getenv().getOrDefault("SPANNER_PROJECT_ID", "your-project-id");
-        String instanceId = System.getenv().getOrDefault("SPANNER_INSTANCE_ID", "your-instance-id");
-        String databaseId = System.getenv().getOrDefault("SPANNER_DATABASE_ID", "your-database-id");
 
-        // Idle threshold in minutes. Sessions whose approximateLastUseTime is
-        // older than this get force-deleted. Set via env var so you can tune
-        // it without redeploying.
-        int idleThresholdMinutes = Integer.parseInt(
-                System.getenv().getOrDefault("IDLE_THRESHOLD_MINUTES", "10"));
+        String projectId = "your-project-id";
+        String instanceId = "your-instance-id";
+        String databaseId = "your-database-id";
+        String tableName = "YOUR_TABLE_NAME";
 
-        DatabaseName databaseName = DatabaseName.of(projectId, instanceId, databaseId);
+        DatabaseAdminSettings settings = DatabaseAdminSettings.newBuilder().build();
 
-        logger.info(String.format(
-                "Scanning idle sessions for %s | threshold=%d min",
-                databaseName, idleThresholdMinutes));
+        try (DatabaseAdminClient adminClient =
+                     DatabaseAdminClient.create(settings)) {
 
-        try (SpannerClient spannerClient = SpannerClient.create(SpannerSettings.newBuilder().build())) {
-            Instant cutoff = Instant.now().minusSeconds(idleThresholdMinutes * 60L);
+            List<String> ddlStatements =
+                    adminClient.getDatabaseDdl(projectId, instanceId, databaseId);
 
-            // --- Step 1: list every idle session first, delete nothing yet ---
-            List<Session> idleSessions = new ArrayList<>();
-            int scanned = 0;
+            System.out.println("DDL for table: " + tableName);
+            System.out.println("--------------------------------");
 
-            ListSessionsRequest listRequest = ListSessionsRequest.newBuilder()
-                    .setDatabase(databaseName.toString())
-                    .setPageSize(1000) // max page size per call; paging handled by iterateAll()
-                    .build();
+            boolean print = false;
 
-            for (Session session : spannerClient.listSessions(listRequest).iterateAll()) {
-                scanned++;
-                Instant lastUsed = toInstant(session.getApproximateLastUseTime());
-                if (lastUsed.isBefore(cutoff)) {
-                    idleSessions.add(session);
+            for (String ddl : ddlStatements) {
+
+                if (ddl.startsWith("CREATE TABLE " + tableName + " ")) {
+                    print = true;
+                }
+
+                if (print) {
+                    System.out.println(ddl);
+                }
+
+                // Stop when next CREATE TABLE starts
+                if (print
+                        && ddl.startsWith("CREATE TABLE ")
+                        && !ddl.startsWith("CREATE TABLE " + tableName + " ")) {
+                    break;
                 }
             }
-
-            System.out.println();
-            System.out.println("Scanned " + scanned + " total session(s).");
-
-            if (idleSessions.isEmpty()) {
-                System.out.println("No sessions idle for more than " + idleThresholdMinutes + " min. Nothing to do.");
-                return;
-            }
-
-            System.out.println("Found " + idleSessions.size() + " session(s) idle for more than "
-                    + idleThresholdMinutes + " min:");
-            System.out.println();
-            for (Session session : idleSessions) {
-                System.out.println("  " + session.getName()
-                        + "  | lastUsed=" + toInstant(session.getApproximateLastUseTime()));
-            }
-
-            // --- Step 2: wait for explicit confirmation before deleting anything ---
-            System.out.println();
-            System.out.print("Type \"delete\" and press Enter to delete ALL " + idleSessions.size()
-                    + " session(s) above. Anything else cancels: ");
-
-            Scanner scanner = new Scanner(System.in);
-            String confirmation = scanner.hasNextLine() ? scanner.nextLine().trim() : "";
-
-            if (!"delete".equals(confirmation)) {
-                System.out.println("Confirmation not received. No sessions were deleted.");
-                return;
-            }
-
-            // --- Step 3: delete, now that the user has confirmed ---
-            int deleted = 0;
-            for (Session session : idleSessions) {
-                try {
-                    spannerClient.deleteSession(
-                            DeleteSessionRequest.newBuilder()
-                                    .setName(session.getName())
-                                    .build());
-                    deleted++;
-                    System.out.println("Deleted: " + session.getName());
-                } catch (Exception e) {
-                    // NOT_FOUND is expected/harmless: Spanner may have already
-                    // GC'd the session itself between list and delete.
-                    logger.log(Level.WARNING, "Failed to delete session " + session.getName(), e);
-                    System.out.println("Failed to delete: " + session.getName() + " (" + e.getMessage() + ")");
-                }
-            }
-
-            System.out.println();
-            System.out.println("Done. Deleted " + deleted + " of " + idleSessions.size() + " session(s).");
         }
-    }
-
-    private static Instant toInstant(Timestamp ts) {
-        return Instant.ofEpochSecond(ts.getSeconds(), ts.getNanos());
     }
 }
