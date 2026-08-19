@@ -5,8 +5,8 @@ import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerOptions;
 import com.google.cloud.spanner.Statement;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class SpannerColumnDiff {
 
@@ -22,20 +22,20 @@ public class SpannerColumnDiff {
 
     public static void main(String[] args) {
 
-        Map<String, Column> db1 =
+        Set<String> db1Columns =
                 getColumns(INSTANCE_1, DATABASE_1);
 
-        Map<String, Column> db2 =
+        Set<String> db2Columns =
                 getColumns(INSTANCE_2, DATABASE_2);
 
-        compare(db1, db2);
+        printDifference(db1Columns, db2Columns);
     }
 
-    private static Map<String, Column> getColumns(
+    private static Set<String> getColumns(
             String instance,
             String database) {
 
-        Map<String, Column> columns = new LinkedHashMap<>();
+        Set<String> columns = new LinkedHashSet<>();
 
         Spanner spanner = SpannerOptions.newBuilder()
                 .setProjectId(PROJECT_ID)
@@ -44,20 +44,17 @@ public class SpannerColumnDiff {
 
         try {
 
-            DatabaseClient client = spanner.getDatabaseClient(
-                    DatabaseId.of(
-                            PROJECT_ID,
-                            instance,
-                            database
-                    )
-            );
+            DatabaseClient client =
+                    spanner.getDatabaseClient(
+                            DatabaseId.of(
+                                    PROJECT_ID,
+                                    instance,
+                                    database
+                            )
+                    );
 
             String sql = """
-                    SELECT
-                        COLUMN_NAME,
-                        ORDINAL_POSITION,
-                        SPANNER_TYPE,
-                        IS_NULLABLE
+                    SELECT COLUMN_NAME
                     FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE TABLE_SCHEMA = ''
                       AND TABLE_NAME = @tableName
@@ -70,21 +67,14 @@ public class SpannerColumnDiff {
                     .build();
 
             ResultSet resultSet =
-                    client.singleUse().executeQuery(statement);
+                    client.singleUse()
+                            .executeQuery(statement);
 
             while (resultSet.next()) {
 
-                String columnName =
-                        resultSet.getString("COLUMN_NAME");
-
-                Column column = new Column(
-                        columnName,
-                        resultSet.getLong("ORDINAL_POSITION"),
-                        resultSet.getString("SPANNER_TYPE"),
-                        resultSet.getString("IS_NULLABLE")
+                columns.add(
+                        resultSet.getString("COLUMN_NAME")
                 );
-
-                columns.put(columnName, column);
             }
 
         } finally {
@@ -94,122 +84,155 @@ public class SpannerColumnDiff {
         return columns;
     }
 
-    private static void compare(
-            Map<String, Column> db1,
-            Map<String, Column> db2) {
+    private static void printDifference(
+            Set<String> db1Columns,
+            Set<String> db2Columns) {
+
+        // Columns present in DB1 but missing from DB2
+        Set<String> onlyInDb1 =
+                new LinkedHashSet<>(db1Columns);
+
+        onlyInDb1.removeAll(db2Columns);
+
+        // Columns present in DB2 but missing from DB1
+        Set<String> onlyInDb2 =
+                new LinkedHashSet<>(db2Columns);
+
+        onlyInDb2.removeAll(db1Columns);
 
         System.out.println();
-        System.out.println("========================================");
-        System.out.println("TABLE : " + TABLE_NAME);
-        System.out.println("========================================");
-
-        boolean differenceFound = false;
-
-        // Columns from DB1
-        for (String columnName : db1.keySet()) {
-
-            Column c1 = db1.get(columnName);
-            Column c2 = db2.get(columnName);
-
-            // Missing in DB2
-            if (c2 == null) {
-
-                differenceFound = true;
-
-                System.out.println();
-                System.out.println("[MISSING IN DB2]");
-                System.out.println("Column : " + columnName);
-                System.out.println("DB1    : " + c1);
-
-                continue;
-            }
-
-            // Compare properties
-            if (!c1.type.equalsIgnoreCase(c2.type)) {
-
-                differenceFound = true;
-
-                System.out.println();
-                System.out.println("[TYPE DIFFERENCE]");
-                System.out.println("Column : " + columnName);
-                System.out.println("DB1    : " + c1.type);
-                System.out.println("DB2    : " + c2.type);
-            }
-
-            if (!c1.nullable.equalsIgnoreCase(c2.nullable)) {
-
-                differenceFound = true;
-
-                System.out.println();
-                System.out.println("[NULLABILITY DIFFERENCE]");
-                System.out.println("Column : " + columnName);
-                System.out.println("DB1    : " + c1.nullable);
-                System.out.println("DB2    : " + c2.nullable);
-            }
-
-            if (c1.position != c2.position) {
-
-                differenceFound = true;
-
-                System.out.println();
-                System.out.println("[POSITION DIFFERENCE]");
-                System.out.println("Column : " + columnName);
-                System.out.println("DB1    : " + c1.position);
-                System.out.println("DB2    : " + c2.position);
-            }
-        }
-
-        // Columns existing only in DB2
-        for (String columnName : db2.keySet()) {
-
-            if (!db1.containsKey(columnName)) {
-
-                differenceFound = true;
-
-                System.out.println();
-                System.out.println("[MISSING IN DB1]");
-                System.out.println("Column : " + columnName);
-                System.out.println("DB2    : " + db2.get(columnName));
-            }
-        }
+        System.out.println(
+                "============================================================"
+        );
+        System.out.println(
+                "             SPANNER COLUMN DIFFERENCE REPORT"
+        );
+        System.out.println(
+                "============================================================"
+        );
 
         System.out.println();
-        System.out.println("========================================");
+        System.out.println("Table      : " + TABLE_NAME);
+        System.out.println("Database 1 : " + DATABASE_1);
+        System.out.println("Database 2 : " + DATABASE_2);
 
-        if (!differenceFound) {
-            System.out.println("NO COLUMN DIFFERENCES FOUND");
+        // ----------------------------------------------------
+        // DB1 ONLY
+        // ----------------------------------------------------
+
+        System.out.println();
+        System.out.println(
+                "------------------------------------------------------------"
+        );
+        System.out.println(
+                " COLUMNS ONLY IN DATABASE 1"
+        );
+        System.out.println(
+                "------------------------------------------------------------"
+        );
+
+        if (onlyInDb1.isEmpty()) {
+
+            System.out.println("  None");
+
         } else {
-            System.out.println("COLUMN DIFFERENCES FOUND");
+
+            int count = 1;
+
+            for (String column : onlyInDb1) {
+
+                System.out.printf(
+                        "  %2d. %s%n",
+                        count++,
+                        column
+                );
+            }
         }
 
-        System.out.println("========================================");
-    }
+        // ----------------------------------------------------
+        // DB2 ONLY
+        // ----------------------------------------------------
 
-    static class Column {
+        System.out.println();
+        System.out.println(
+                "------------------------------------------------------------"
+        );
+        System.out.println(
+                " COLUMNS ONLY IN DATABASE 2"
+        );
+        System.out.println(
+                "------------------------------------------------------------"
+        );
 
-        String name;
-        long position;
-        String type;
-        String nullable;
+        if (onlyInDb2.isEmpty()) {
 
-        Column(
-                String name,
-                long position,
-                String type,
-                String nullable) {
+            System.out.println("  None");
 
-            this.name = name;
-            this.position = position;
-            this.type = type;
-            this.nullable = nullable;
+        } else {
+
+            int count = 1;
+
+            for (String column : onlyInDb2) {
+
+                System.out.printf(
+                        "  %2d. %s%n",
+                        count++,
+                        column
+                );
+            }
         }
 
-        @Override
-        public String toString() {
+        // ----------------------------------------------------
+        // SUMMARY
+        // ----------------------------------------------------
 
-            return "Type=" + type +
-                    ", Nullable=" + nullable +
-                    ", Position=" + position;
+        System.out.println();
+        System.out.println(
+                "------------------------------------------------------------"
+        );
+        System.out.println(" SUMMARY");
+        System.out.println(
+                "------------------------------------------------------------"
+        );
+
+        System.out.printf(
+                "  Database 1 columns : %d%n",
+                db1Columns.size()
+        );
+
+        System.out.printf(
+                "  Database 2 columns : %d%n",
+                db2Columns.size()
+        );
+
+        System.out.printf(
+                "  Only in Database 1 : %d%n",
+                onlyInDb1.size()
+        );
+
+        System.out.printf(
+                "  Only in Database 2 : %d%n",
+                onlyInDb2.size()
+        );
+
+        System.out.println();
+
+        if (onlyInDb1.isEmpty() && onlyInDb2.isEmpty()) {
+
+            System.out.println(
+                    "  Result              : ✓ TABLES HAVE IDENTICAL COLUMNS"
+            );
+
+        } else {
+
+            System.out.println(
+                    "  Result              : ✗ COLUMN DIFFERENCES FOUND"
+            );
         }
+
+        System.out.println(
+                "============================================================"
+        );
+        System.out.println();
     }
 }
