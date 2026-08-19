@@ -1,38 +1,463 @@
-import org.junit.jupiter.api.Test;
+import com.google.cloud.spanner.DatabaseClient;
+import com.google.cloud.spanner.DatabaseId;
+import com.google.cloud.spanner.ResultSet;
+import com.google.cloud.spanner.Spanner;
+import com.google.cloud.spanner.SpannerOptions;
+import com.google.cloud.spanner.Statement;
+import com.google.cloud.spanner.Value;
 
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
-public class CsvMappingTest {
+public class SpannerDdlComparator {
 
-    @Test
-    void generateMappings() throws Exception {
+    // ============================
+    // DATABASE 1
+    // ============================
+    private static final String PROJECT_1 = "project-1";
+    private static final String INSTANCE_1 = "instance-1";
+    private static final String DATABASE_1 = "database-1";
 
-        String csv1File = "src/test/resources/csv1.csv";
-        String csv2File = "src/test/resources/csv2.csv";
+    // ============================
+    // DATABASE 2
+    // ============================
+    private static final String PROJECT_2 = "project-2";
+    private static final String INSTANCE_2 = "instance-2";
+    private static final String DATABASE_2 = "database-2";
 
-        List<String> list1 = new ArrayList<>();
-        List<String> list2 = new ArrayList<>();
+    public static void main(String[] args) {
 
-        // Read first CSV
-        for (String line : Files.readAllLines(Paths.get(csv1File))) {
-            for (String value : line.split(",")) {
-                list1.add(value.trim());
+        System.out.println("==========================================");
+        System.out.println("       SPANNER DDL COMPARISON");
+        System.out.println("==========================================");
+
+        Map<String, String> ddlDb1 = extractDdl(
+                PROJECT_1,
+                INSTANCE_1,
+                DATABASE_1
+        );
+
+        Map<String, String> ddlDb2 = extractDdl(
+                PROJECT_2,
+                INSTANCE_2,
+                DATABASE_2
+        );
+
+        compareDdl(ddlDb1, ddlDb2);
+    }
+
+    /**
+     * Extract table and index definitions from Spanner.
+     */
+    private static Map<String, String> extractDdl(
+            String project,
+            String instance,
+            String database) {
+
+        Map<String, String> ddlMap = new TreeMap<>();
+
+        Spanner spanner = SpannerOptions.newBuilder()
+                .setProjectId(project)
+                .build()
+                .getService();
+
+        try {
+
+            DatabaseId databaseId = DatabaseId.of(
+                    project,
+                    instance,
+                    database
+            );
+
+            DatabaseClient client =
+                    spanner.getDatabaseClient(databaseId);
+
+            // ==========================================
+            // TABLES
+            // ==========================================
+
+            String tableQuery = """
+                    SELECT
+                        TABLE_NAME
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA = ''
+                    AND TABLE_TYPE = 'BASE TABLE'
+                    ORDER BY TABLE_NAME
+                    """;
+
+            ResultSet tableResult =
+                    client.singleUse()
+                            .executeQuery(Statement.of(tableQuery));
+
+            while (tableResult.next()) {
+
+                String tableName =
+                        tableResult.getString("TABLE_NAME");
+
+                String ddl = buildTableDdl(
+                        client,
+                        tableName
+                );
+
+                ddlMap.put(
+                        "TABLE:" + tableName,
+                        normalize(ddl)
+                );
+            }
+
+            // ==========================================
+            // INDEXES
+            // ==========================================
+
+            String indexQuery = """
+                    SELECT DISTINCT
+                        INDEX_NAME
+                    FROM INFORMATION_SCHEMA.INDEXES
+                    WHERE TABLE_SCHEMA = ''
+                    AND INDEX_NAME IS NOT NULL
+                    AND INDEX_NAME != ''
+                    ORDER BY INDEX_NAME
+                    """;
+
+            ResultSet indexResult =
+                    client.singleUse()
+                            .executeQuery(Statement.of(indexQuery));
+
+            while (indexResult.next()) {
+
+                String indexName =
+                        indexResult.getString("INDEX_NAME");
+
+                String ddl = buildIndexDdl(
+                        client,
+                        indexName
+                );
+
+                ddlMap.put(
+                        "INDEX:" + indexName,
+                        normalize(ddl)
+                );
+            }
+
+        } finally {
+            spanner.close();
+        }
+
+        return ddlMap;
+    }
+
+    /**
+     * Build CREATE TABLE statement.
+     */
+    private static String buildTableDdl(
+            DatabaseClient client,
+            String tableName) {
+
+        String columnQuery = """
+                SELECT
+                    COLUMN_NAME,
+                    SPANNER_TYPE,
+                    IS_NULLABLE,
+                    ORDINAL_POSITION
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = ''
+                AND TABLE_NAME = @tableName
+                ORDER BY ORDINAL_POSITION
+                """;
+
+        Statement statement = Statement.newBuilder(columnQuery)
+                .bind("tableName")
+                .to(tableName)
+                .build();
+
+        ResultSet result =
+                client.singleUse().executeQuery(statement);
+
+        List<String> columns = new ArrayList<>();
+
+        while (result.next()) {
+
+            String columnName =
+                    result.getString("COLUMN_NAME");
+
+            String type =
+                    result.getString("SPANNER_TYPE");
+
+            String nullable =
+                    result.getString("IS_NULLABLE");
+
+            String column = "    " + columnName + " " + type;
+
+            if ("NO".equalsIgnoreCase(nullable)) {
+                column += " NOT NULL";
+            }
+
+            columns.add(column);
+        }
+
+        // ==========================================
+        // PRIMARY KEY
+        // ==========================================
+
+        String pkQuery = """
+                SELECT
+                    COLUMN_NAME
+                FROM INFORMATION_SCHEMA.INDEX_COLUMNS
+                WHERE TABLE_SCHEMA = ''
+                AND TABLE_NAME = @tableName
+                AND INDEX_NAME = 'PRIMARY_KEY'
+                ORDER BY ORDINAL_POSITION
+                """;
+
+        Statement pkStatement = Statement.newBuilder(pkQuery)
+                .bind("tableName")
+                .to(tableName)
+                .build();
+
+        ResultSet pkResult =
+                client.singleUse().executeQuery(pkStatement);
+
+        List<String> primaryKeys = new ArrayList<>();
+
+        while (pkResult.next()) {
+            primaryKeys.add(
+                    pkResult.getString("COLUMN_NAME")
+            );
+        }
+
+        StringBuilder ddl = new StringBuilder();
+
+        ddl.append("CREATE TABLE ")
+                .append(tableName)
+                .append(" (\n");
+
+        ddl.append(
+                String.join(",\n", columns)
+        );
+
+        if (!primaryKeys.isEmpty()) {
+
+            ddl.append(",\n    PRIMARY KEY (")
+                    .append(String.join(
+                            ", ",
+                            primaryKeys
+                    ))
+                    .append(")");
+        }
+
+        ddl.append("\n);");
+
+        return ddl.toString();
+    }
+
+    /**
+     * Build CREATE INDEX statement.
+     */
+    private static String buildIndexDdl(
+            DatabaseClient client,
+            String indexName) {
+
+        String query = """
+                SELECT
+                    TABLE_NAME,
+                    COLUMN_NAME,
+                    INDEX_TYPE,
+                    IS_UNIQUE,
+                    IS_NULL_FILTERED,
+                    COLUMN_ORDER,
+                    ORDINAL_POSITION
+                FROM INFORMATION_SCHEMA.INDEX_COLUMNS
+                WHERE TABLE_SCHEMA = ''
+                AND INDEX_NAME = @indexName
+                ORDER BY ORDINAL_POSITION
+                """;
+
+        Statement statement = Statement.newBuilder(query)
+                .bind("indexName")
+                .to(indexName)
+                .build();
+
+        ResultSet result =
+                client.singleUse().executeQuery(statement);
+
+        String tableName = null;
+        boolean unique = false;
+        boolean nullFiltered = false;
+
+        List<String> columns = new ArrayList<>();
+
+        while (result.next()) {
+
+            if (tableName == null) {
+                tableName =
+                        result.getString("TABLE_NAME");
+            }
+
+            unique =
+                    result.getBoolean("IS_UNIQUE");
+
+            nullFiltered =
+                    result.getBoolean("IS_NULL_FILTERED");
+
+            String column =
+                    result.getString("COLUMN_NAME");
+
+            String order =
+                    result.getString("COLUMN_ORDER");
+
+            if (order != null &&
+                    !order.isBlank()) {
+
+                column += " " + order;
+            }
+
+            columns.add(column);
+        }
+
+        if (tableName == null) {
+            return "";
+        }
+
+        StringBuilder ddl = new StringBuilder();
+
+        ddl.append("CREATE ");
+
+        if (unique) {
+            ddl.append("UNIQUE ");
+        }
+
+        ddl.append("INDEX ")
+                .append(indexName)
+                .append(" ON ")
+                .append(tableName)
+                .append(" (")
+                .append(String.join(
+                        ", ",
+                        columns
+                ))
+                .append(")");
+
+        if (nullFiltered) {
+            ddl.append(" NULL_FILTERED");
+        }
+
+        ddl.append(";");
+
+        return ddl.toString();
+    }
+
+    /**
+     * Compare the two databases.
+     */
+    private static void compareDdl(
+            Map<String, String> db1,
+            Map<String, String> db2) {
+
+        Set<String> allObjects = new TreeSet<>();
+
+        allObjects.addAll(db1.keySet());
+        allObjects.addAll(db2.keySet());
+
+        int differences = 0;
+
+        for (String object : allObjects) {
+
+            String ddl1 = db1.get(object);
+            String ddl2 = db2.get(object);
+
+            // ==========================================
+            // Exists only in DB1
+            // ==========================================
+
+            if (ddl1 != null && ddl2 == null) {
+
+                differences++;
+
+                System.out.println();
+                System.out.println("------------------------------------------");
+                System.out.println("ONLY IN DATABASE 1");
+                System.out.println("------------------------------------------");
+                System.out.println(object);
+                System.out.println(ddl1);
+
+                continue;
+            }
+
+            // ==========================================
+            // Exists only in DB2
+            // ==========================================
+
+            if (ddl1 == null && ddl2 != null) {
+
+                differences++;
+
+                System.out.println();
+                System.out.println("------------------------------------------");
+                System.out.println("ONLY IN DATABASE 2");
+                System.out.println("------------------------------------------");
+                System.out.println(object);
+                System.out.println(ddl2);
+
+                continue;
+            }
+
+            // ==========================================
+            // Exists in both but different
+            // ==========================================
+
+            if (!ddl1.equals(ddl2)) {
+
+                differences++;
+
+                System.out.println();
+                System.out.println("==========================================");
+                System.out.println("DDL DIFFERENCE");
+                System.out.println("==========================================");
+
+                System.out.println("OBJECT : " + object);
+
+                System.out.println();
+                System.out.println("DATABASE 1:");
+                System.out.println(ddl1);
+
+                System.out.println();
+                System.out.println("DATABASE 2:");
+                System.out.println(ddl2);
             }
         }
 
-        // Read second CSV
-        for (String line : Files.readAllLines(Paths.get(csv2File))) {
-            for (String value : line.split(",")) {
-                list2.add(value.trim());
-            }
+        System.out.println();
+        System.out.println("==========================================");
+
+        if (differences == 0) {
+
+            System.out.println(
+                    "DATABASES ARE IDENTICAL"
+            );
+
+        } else {
+
+            System.out.println(
+                    "TOTAL DIFFERENCES: " + differences
+            );
         }
 
-        // Print mappings
-        for (int i = 0; i < Math.min(list1.size(), list2.size()); i++) {
-            System.out.println("'" + list1.get(i) + "' : '" + list2.get(i) + "', \\");
+        System.out.println("==========================================");
+    }
+
+    /**
+     * Normalize DDL to avoid differences caused
+     * only by whitespace/capitalization.
+     */
+    private static String normalize(String ddl) {
+
+        if (ddl == null) {
+            return "";
         }
+
+        return ddl
+                .replaceAll("\\s+", " ")
+                .trim()
+                .toUpperCase(Locale.ROOT);
     }
 }
