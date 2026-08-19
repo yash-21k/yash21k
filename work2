@@ -5,10 +5,14 @@ import com.google.cloud.spanner.Spanner;
 import com.google.cloud.spanner.SpannerOptions;
 import com.google.cloud.spanner.Statement;
 
-import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.TreeSet;
 
 public class SpannerColumnDiff {
+
+    // ============================================================
+    // CONFIGURATION
+    // ============================================================
 
     private static final String PROJECT_ID = "your-project-id";
 
@@ -19,6 +23,7 @@ public class SpannerColumnDiff {
     private static final String DATABASE_2 = "database-2";
 
     private static final String TABLE_NAME = "payment_client_info";
+
 
     public static void main(String[] args) {
 
@@ -31,11 +36,27 @@ public class SpannerColumnDiff {
         printDifference(db1Columns, db2Columns);
     }
 
+
+    // ============================================================
+    // GET COLUMNS FROM SPANNER
+    // ============================================================
+
     private static Set<String> getColumns(
             String instance,
             String database) {
 
-        Set<String> columns = new LinkedHashSet<>();
+        /*
+         * TreeSet automatically sorts column names alphabetically.
+         *
+         * Example:
+         *
+         * E2EPaymentType
+         * PaymentType
+         * ReferenceNumber
+         * Status
+         * UETR
+         */
+        Set<String> columns = new TreeSet<>();
 
         Spanner spanner = SpannerOptions.newBuilder()
                 .setProjectId(PROJECT_ID)
@@ -44,91 +65,185 @@ public class SpannerColumnDiff {
 
         try {
 
+            DatabaseId databaseId = DatabaseId.of(
+                    PROJECT_ID,
+                    instance,
+                    database
+            );
+
             DatabaseClient client =
-                    spanner.getDatabaseClient(
-                            DatabaseId.of(
-                                    PROJECT_ID,
-                                    instance,
-                                    database
-                            )
-                    );
+                    spanner.getDatabaseClient(databaseId);
+
 
             String sql = """
                     SELECT COLUMN_NAME
                     FROM INFORMATION_SCHEMA.COLUMNS
                     WHERE TABLE_SCHEMA = ''
                       AND TABLE_NAME = @tableName
-                    ORDER BY ORDINAL_POSITION
                     """;
+
 
             Statement statement = Statement.newBuilder(sql)
                     .bind("tableName")
                     .to(TABLE_NAME)
                     .build();
 
+
             ResultSet resultSet =
                     client.singleUse()
                             .executeQuery(statement);
 
+
             while (resultSet.next()) {
 
-                columns.add(
-                        resultSet.getString("COLUMN_NAME")
-                );
+                String columnName =
+                        resultSet.getString("COLUMN_NAME");
+
+                columns.add(columnName);
             }
 
         } finally {
+
             spanner.close();
         }
 
         return columns;
     }
 
+
+    // ============================================================
+    // COMPARE DATABASES
+    // ============================================================
+
     private static void printDifference(
             Set<String> db1Columns,
             Set<String> db2Columns) {
 
-        // Columns present in DB1 but missing from DB2
+
+        /*
+         * Columns which exist in DB1 but NOT in DB2
+         */
         Set<String> onlyInDb1 =
-                new LinkedHashSet<>(db1Columns);
+                new TreeSet<>(db1Columns);
 
         onlyInDb1.removeAll(db2Columns);
 
-        // Columns present in DB2 but missing from DB1
+
+        /*
+         * Columns which exist in DB2 but NOT in DB1
+         */
         Set<String> onlyInDb2 =
-                new LinkedHashSet<>(db2Columns);
+                new TreeSet<>(db2Columns);
 
         onlyInDb2.removeAll(db1Columns);
 
+
+        // ========================================================
+        // HEADER
+        // ========================================================
+
         System.out.println();
+
         System.out.println(
-                "============================================================"
+                "================================================================"
         );
+
         System.out.println(
-                "             SPANNER COLUMN DIFFERENCE REPORT"
+                "              SPANNER COLUMN DIFFERENCE REPORT"
         );
+
         System.out.println(
-                "============================================================"
+                "================================================================"
         );
 
         System.out.println();
-        System.out.println("Table      : " + TABLE_NAME);
-        System.out.println("Database 1 : " + DATABASE_1);
-        System.out.println("Database 2 : " + DATABASE_2);
 
-        // ----------------------------------------------------
-        // DB1 ONLY
-        // ----------------------------------------------------
+        System.out.println(
+                "Table      : " + TABLE_NAME
+        );
+
+        System.out.println(
+                "Database 1 : " + DATABASE_1
+        );
+
+        System.out.println(
+                "Database 2 : " + DATABASE_2
+        );
+
+
+        // ========================================================
+        // DATABASE 1 COLUMNS
+        // ========================================================
 
         System.out.println();
+
         System.out.println(
-                "------------------------------------------------------------"
+                "----------------------------------------------------------------"
         );
+
         System.out.println(
-                " COLUMNS ONLY IN DATABASE 1"
+                " DATABASE 1 COLUMNS"
         );
+
         System.out.println(
-                "------------------------------------------------------------"
+                "----------------------------------------------------------------"
+        );
+
+        printColumns(db1Columns);
+
+
+        // ========================================================
+        // DATABASE 2 COLUMNS
+        // ========================================================
+
+        System.out.println();
+
+        System.out.println(
+                "----------------------------------------------------------------"
+        );
+
+        System.out.println(
+                " DATABASE 2 COLUMNS"
+        );
+
+        System.out.println(
+                "----------------------------------------------------------------"
+        );
+
+        printColumns(db2Columns);
+
+
+        // ========================================================
+        // DIFFERENCES
+        // ========================================================
+
+        System.out.println();
+
+        System.out.println(
+                "================================================================"
+        );
+
+        System.out.println(
+                "                         DIFFERENCES"
+        );
+
+        System.out.println(
+                "================================================================"
+        );
+
+
+        // --------------------------------------------------------
+        // ONLY IN DATABASE 1
+        // --------------------------------------------------------
+
+        System.out.println();
+
+        System.out.println(
+                "COLUMNS ONLY IN DATABASE 1"
+        );
+
+        System.out.println(
+                "----------------------------------------------------------------"
         );
 
         if (onlyInDb1.isEmpty()) {
@@ -137,31 +252,22 @@ public class SpannerColumnDiff {
 
         } else {
 
-            int count = 1;
-
-            for (String column : onlyInDb1) {
-
-                System.out.printf(
-                        "  %2d. %s%n",
-                        count++,
-                        column
-                );
-            }
+            printColumns(onlyInDb1);
         }
 
-        // ----------------------------------------------------
-        // DB2 ONLY
-        // ----------------------------------------------------
+
+        // --------------------------------------------------------
+        // ONLY IN DATABASE 2
+        // --------------------------------------------------------
 
         System.out.println();
+
         System.out.println(
-                "------------------------------------------------------------"
+                "COLUMNS ONLY IN DATABASE 2"
         );
+
         System.out.println(
-                " COLUMNS ONLY IN DATABASE 2"
-        );
-        System.out.println(
-                "------------------------------------------------------------"
+                "----------------------------------------------------------------"
         );
 
         if (onlyInDb2.isEmpty()) {
@@ -170,69 +276,88 @@ public class SpannerColumnDiff {
 
         } else {
 
-            int count = 1;
-
-            for (String column : onlyInDb2) {
-
-                System.out.printf(
-                        "  %2d. %s%n",
-                        count++,
-                        column
-                );
-            }
+            printColumns(onlyInDb2);
         }
 
-        // ----------------------------------------------------
+
+        // ========================================================
         // SUMMARY
-        // ----------------------------------------------------
+        // ========================================================
 
         System.out.println();
+
         System.out.println(
-                "------------------------------------------------------------"
+                "================================================================"
         );
-        System.out.println(" SUMMARY");
+
         System.out.println(
-                "------------------------------------------------------------"
+                "                           SUMMARY"
+        );
+
+        System.out.println(
+                "================================================================"
         );
 
         System.out.printf(
-                "  Database 1 columns : %d%n",
+                "Database 1 total columns : %d%n",
                 db1Columns.size()
         );
 
         System.out.printf(
-                "  Database 2 columns : %d%n",
+                "Database 2 total columns : %d%n",
                 db2Columns.size()
         );
 
         System.out.printf(
-                "  Only in Database 1 : %d%n",
+                "Only in Database 1       : %d%n",
                 onlyInDb1.size()
         );
 
         System.out.printf(
-                "  Only in Database 2 : %d%n",
+                "Only in Database 2       : %d%n",
                 onlyInDb2.size()
         );
+
 
         System.out.println();
 
         if (onlyInDb1.isEmpty() && onlyInDb2.isEmpty()) {
 
             System.out.println(
-                    "  Result              : ✓ TABLES HAVE IDENTICAL COLUMNS"
+                    "RESULT                    : NO DIFFERENCES"
             );
 
         } else {
 
             System.out.println(
-                    "  Result              : ✗ COLUMN DIFFERENCES FOUND"
+                    "RESULT                    : DIFFERENCES FOUND"
             );
         }
 
         System.out.println(
-                "============================================================"
+                "================================================================"
         );
+
         System.out.println();
+    }
+
+
+    // ============================================================
+    // PRINT COLUMNS
+    // ============================================================
+
+    private static void printColumns(
+            Set<String> columns) {
+
+        int count = 1;
+
+        for (String column : columns) {
+
+            System.out.printf(
+                    "  %3d. %s%n",
+                    count++,
+                    column
+            );
+        }
     }
 }
