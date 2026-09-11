@@ -76,26 +76,33 @@ public class SpannerSchemaSync {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 4) {
-            printUsage();
-            System.exit(1);
-        }
 
-        String projectId = args[0];
-        String instanceId = args[1];
-        String databaseId = args[2];
-        String schemaPath = args[3];
+        Scanner scanner = new Scanner(System.in);
 
-        Set<String> flags = new LinkedHashSet<>();
+        // ------------------------------------------------------------
+        // Read configuration from console
+        // ------------------------------------------------------------
 
-        for (int i = 4; i < args.length; i++) {
-            flags.add(args[i].toLowerCase(Locale.ROOT));
-        }
+        System.out.println("======================================");
+        System.out.println("       SPANNER SCHEMA SYNC TOOL");
+        System.out.println("======================================");
+        System.out.println();
 
-        boolean apply = flags.contains("--apply");
-        boolean allowDelete = flags.contains("--allow-delete");
-        boolean autoConfirm =
-                flags.contains("--yes") || flags.contains("-y");
+        System.out.print("Enter Project ID: ");
+        String projectId = scanner.nextLine().trim();
+
+        System.out.print("Enter Instance ID: ");
+        String instanceId = scanner.nextLine().trim();
+
+        System.out.print("Enter Database ID: ");
+        String databaseId = scanner.nextLine().trim();
+
+        System.out.print("Enter schema.json path: ");
+        String schemaPath = scanner.nextLine().trim();
+
+        System.out.println();
+
+        System.out.println("Loading desired schema...");
 
         SchemaFile desired = loadSchema(schemaPath);
 
@@ -104,6 +111,10 @@ public class SpannerSchemaSync {
                     "Invalid schema.json: 'tables' is missing."
             );
         }
+
+        // ------------------------------------------------------------
+        // Connect to Spanner
+        // ------------------------------------------------------------
 
         SpannerOptions options = SpannerOptions.newBuilder()
                 .setProjectId(projectId)
@@ -122,6 +133,17 @@ public class SpannerSchemaSync {
             DatabaseClient dbClient =
                     spanner.getDatabaseClient(dbId);
 
+            System.out.println(
+                    "Connected to Spanner database: "
+                            + databaseId
+            );
+
+            System.out.println();
+
+            // --------------------------------------------------------
+            // Calculate schema diff
+            // --------------------------------------------------------
+
             List<Change> allChanges = new ArrayList<>();
 
             for (TableDef table : desired.tables) {
@@ -130,20 +152,56 @@ public class SpannerSchemaSync {
                 );
             }
 
+            // --------------------------------------------------------
+            // No changes
+            // --------------------------------------------------------
+
             if (allChanges.isEmpty()) {
+
                 System.out.println(
                         "Schema already up to date. Nothing to do."
                 );
+
                 return;
             }
 
+            // --------------------------------------------------------
+            // Display diff
+            // --------------------------------------------------------
+
             printReport(allChanges);
+
+            // --------------------------------------------------------
+            // Ask whether deletions should be allowed
+            // --------------------------------------------------------
+
+            boolean allowDelete = false;
+
+            if (containsDeletes(allChanges)) {
+
+                System.out.print(
+                        "Allow DELETE operations? (yes/no): "
+                );
+
+                String deleteInput =
+                        scanner.nextLine()
+                                .trim()
+                                .toLowerCase(Locale.ROOT);
+
+                allowDelete = deleteInput.equals("yes");
+            }
+
+            // --------------------------------------------------------
+            // Build DDL
+            // --------------------------------------------------------
 
             List<String> ddlToRun = new ArrayList<>();
 
             for (Change change : allChanges) {
+
                 if (change.type == ChangeType.DELETE
                         && !allowDelete) {
+
                     continue;
                 }
 
@@ -152,64 +210,68 @@ public class SpannerSchemaSync {
                 }
             }
 
-            // Dry run
-            if (!apply) {
-                System.out.println(
-                        "Dry run only. No changes were made."
-                );
-
-                if (containsDeletes(allChanges)
-                        && !allowDelete) {
-                    System.out.println(
-                            "To execute deletions, re-run with "
-                                    + "--apply --allow-delete."
-                    );
-                } else {
-                    System.out.println(
-                            "Re-run with --apply to execute "
-                                    + "the planned changes."
-                    );
-                }
-
-                return;
-            }
+            // --------------------------------------------------------
+            // Nothing to apply
+            // --------------------------------------------------------
 
             if (ddlToRun.isEmpty()) {
-                System.out.println("Nothing to apply.");
 
-                if (containsDeletes(allChanges)
-                        && !allowDelete) {
-                    System.out.println(
-                            "Deletions require --allow-delete."
-                    );
-                }
+                System.out.println();
+                System.out.println(
+                        "No changes available to apply."
+                );
 
                 return;
             }
 
-            // Ask for confirmation before applying
-            if (!autoConfirm) {
-                System.out.println();
-                System.out.println(
-                        "WARNING: The above schema changes "
-                                + "will be applied to Spanner."
-                );
+            // --------------------------------------------------------
+            // Final confirmation
+            // --------------------------------------------------------
 
-                System.out.println(
-                        "Statements to execute: "
-                                + ddlToRun.size()
-                );
+            System.out.println();
+            System.out.println("======================================");
+            System.out.println("           APPLY CHANGES?");
+            System.out.println("======================================");
+            System.out.println();
 
-                System.out.println();
+            System.out.println(
+                    "The following "
+                            + ddlToRun.size()
+                            + " statement(s) will be executed:"
+            );
 
-                if (!confirmApply()) {
-                    System.out.println(
-                            "Schema update cancelled. "
-                                    + "No changes were made."
-                    );
-                    return;
-                }
+            System.out.println();
+
+            for (String ddl : ddlToRun) {
+                System.out.println("  " + ddl + ";");
             }
+
+            System.out.println();
+
+            System.out.print(
+                    "Do you want to apply these schema changes? "
+                            + "(yes/no): "
+            );
+
+            String confirmation =
+                    scanner.nextLine()
+                            .trim()
+                            .toLowerCase(Locale.ROOT);
+
+            if (!confirmation.equals("yes")) {
+
+                System.out.println();
+                System.out.println(
+                        "Schema update cancelled. "
+                                + "No changes were made."
+                );
+
+                return;
+            }
+
+            // --------------------------------------------------------
+            // Apply DDL
+            // --------------------------------------------------------
 
             System.out.println();
             System.out.println(
@@ -238,42 +300,9 @@ public class SpannerSchemaSync {
         }
     }
 
-    private static boolean confirmApply() {
-        try (Scanner scanner = new Scanner(System.in)) {
-            System.out.print(
-                    "Do you want to apply these schema changes? "
-                            + "(yes/no): "
-            );
-
-            String response = scanner.nextLine()
-                    .trim()
-                    .toLowerCase(Locale.ROOT);
-
-            return response.equals("yes")
-                    || response.equals("y");
-        }
-    }
-
-    private static void printUsage() {
-        System.err.println(
-                "Usage: java -jar spanner-schema-sync.jar "
-                        + "<projectId> <instanceId> "
-                        + "<databaseId> <schema.json> "
-                        + "[--apply] [--allow-delete] [--yes]"
-        );
-    }
-
-    private static boolean containsDeletes(
-            List<Change> changes) {
-
-        for (Change change : changes) {
-            if (change.type == ChangeType.DELETE) {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    // ================================================================
+    // Print schema diff
+    // ================================================================
 
     private static void printReport(
             List<Change> changes) {
@@ -292,7 +321,7 @@ public class SpannerSchemaSync {
 
         System.out.println();
         System.out.println("======================================");
-        System.out.println("           SPANNER SCHEMA DIFF");
+        System.out.println("          SPANNER SCHEMA DIFF");
         System.out.println("======================================");
         System.out.println();
 
@@ -315,6 +344,7 @@ public class SpannerSchemaSync {
         System.out.println();
 
         if (!creates.isEmpty()) {
+
             System.out.println("NEW TABLES:");
 
             for (Change change : creates) {
@@ -327,9 +357,11 @@ public class SpannerSchemaSync {
         }
 
         if (!adds.isEmpty()) {
+
             System.out.println("COLUMNS TO ADD:");
 
             for (Change change : adds) {
+
                 System.out.println(
                         "  + "
                                 + change.table
@@ -345,11 +377,13 @@ public class SpannerSchemaSync {
         }
 
         if (!modifies.isEmpty()) {
+
             System.out.println(
-                    "COLUMNS TO MODIFY (size change):"
+                    "COLUMNS TO MODIFY:"
             );
 
             for (Change change : modifies) {
+
                 System.out.println(
                         "  ~ "
                                 + change.table
@@ -364,13 +398,13 @@ public class SpannerSchemaSync {
         }
 
         if (!deletes.isEmpty()) {
+
             System.out.println(
-                    "COLUMNS TO DELETE "
-                            + "(present in Spanner, "
-                            + "missing from schema.json):"
+                    "COLUMNS TO DELETE:"
             );
 
             for (Change change : deletes) {
+
                 System.out.println(
                         "  - "
                                 + change.table
@@ -384,8 +418,7 @@ public class SpannerSchemaSync {
 
             System.out.println();
             System.out.println(
-                    "NOTE: deletions are NOT executed "
-                            + "unless --allow-delete is passed."
+                    "DELETE operations require explicit confirmation."
             );
             System.out.println();
         }
@@ -393,6 +426,7 @@ public class SpannerSchemaSync {
         System.out.println("PLANNED DDL:");
 
         for (Change change : changes) {
+
             if (change.ddl != null) {
                 System.out.println(
                         "  " + change.ddl + ";"
@@ -403,31 +437,9 @@ public class SpannerSchemaSync {
         System.out.println();
     }
 
-    private static List<Change> filter(
-            List<Change> changes,
-            ChangeType type) {
-
-        List<Change> result = new ArrayList<>();
-
-        for (Change change : changes) {
-            if (change.type == type) {
-                result.add(change);
-            }
-        }
-
-        return result;
-    }
-
-    private static SchemaFile loadSchema(
-            String path) throws Exception {
-
-        try (Reader reader = new FileReader(path)) {
-            return new Gson().fromJson(
-                    reader,
-                    SchemaFile.class
-            );
-        }
-    }
+    // ================================================================
+    // Diff table
+    // ================================================================
 
     private static List<Change> diffTable(
             DatabaseClient dbClient,
@@ -441,67 +453,111 @@ public class SpannerSchemaSync {
                         table.table
                 );
 
+        // ------------------------------------------------------------
+        // Table does not exist
+        // ------------------------------------------------------------
+
         if (live.isEmpty()) {
+
             Change change = new Change();
 
-            change.type = ChangeType.CREATE_TABLE;
-            change.table = table.table;
-            change.ddl = buildCreateTable(table);
+            change.type =
+                    ChangeType.CREATE_TABLE;
+
+            change.table =
+                    table.table;
+
+            change.ddl =
+                    buildCreateTable(table);
 
             changes.add(change);
 
             return changes;
         }
 
+        // ------------------------------------------------------------
+        // Desired column names
+        // ------------------------------------------------------------
+
         Set<String> desiredColumnNames =
                 new LinkedHashSet<>();
 
         for (ColumnDef column : table.columns) {
+
             desiredColumnNames.add(
-                    column.name.toUpperCase(Locale.ROOT)
+                    column.name.toUpperCase(
+                            Locale.ROOT
+                    )
             );
         }
 
-        for (ColumnDef column : table.columns) {
-            LiveColumn existing = live.get(
-                    column.name.toUpperCase(Locale.ROOT)
-            );
+        // ------------------------------------------------------------
+        // ADD / MODIFY
+        // ------------------------------------------------------------
 
-            String desiredType = spannerType(column);
+        for (ColumnDef column : table.columns) {
+
+            LiveColumn existing =
+                    live.get(
+                            column.name.toUpperCase(
+                                    Locale.ROOT
+                            )
+                    );
+
+            String desiredType =
+                    spannerType(column);
 
             if (existing == null) {
+
                 Change change = new Change();
 
-                change.type = ChangeType.ADD;
-                change.table = table.table;
-                change.column = column.name;
-                change.detail = desiredType
-                        + (column.isNullable()
-                        ? ""
-                        : " NOT NULL");
+                change.type =
+                        ChangeType.ADD;
 
-                change.ddl = String.format(
-                        "ALTER TABLE %s ADD COLUMN %s %s%s",
-                        table.table,
-                        column.name,
-                        desiredType,
-                        column.isNullable()
+                change.table =
+                        table.table;
+
+                change.column =
+                        column.name;
+
+                change.detail =
+                        desiredType
+                                + (column.isNullable()
                                 ? ""
-                                : " NOT NULL"
-                );
+                                : " NOT NULL");
+
+                change.ddl =
+                        String.format(
+                                "ALTER TABLE %s "
+                                        + "ADD COLUMN %s %s%s",
+                                table.table,
+                                column.name,
+                                desiredType,
+                                column.isNullable()
+                                        ? ""
+                                        : " NOT NULL"
+                        );
 
                 changes.add(change);
 
-            } else if (isWideningStringOrBytes(
-                    existing.spannerType,
-                    desiredType
-            )) {
+            } else if (
+                    isWideningStringOrBytes(
+                            existing.spannerType,
+                            desiredType
+                    )
+            ) {
 
                 Change change = new Change();
 
-                change.type = ChangeType.MODIFY;
-                change.table = table.table;
-                change.column = column.name;
+                change.type =
+                        ChangeType.MODIFY;
+
+                change.table =
+                        table.table;
+
+                change.column =
+                        column.name;
+
                 change.detail =
                         existing.spannerType
                                 + " -> "
@@ -512,36 +568,54 @@ public class SpannerSchemaSync {
                                 ? ""
                                 : " NOT NULL";
 
-                change.ddl = String.format(
-                        "ALTER TABLE %s ALTER COLUMN %s %s%s",
-                        table.table,
-                        column.name,
-                        desiredType,
-                        nullability
-                );
+                change.ddl =
+                        String.format(
+                                "ALTER TABLE %s "
+                                        + "ALTER COLUMN %s %s%s",
+                                table.table,
+                                column.name,
+                                desiredType,
+                                nullability
+                        );
 
                 changes.add(change);
             }
         }
 
+        // ------------------------------------------------------------
+        // DELETE
+        // ------------------------------------------------------------
+
         for (LiveColumn existing : live.values()) {
+
             if (!desiredColumnNames.contains(
-                    existing.name.toUpperCase(Locale.ROOT)
+                    existing.name.toUpperCase(
+                            Locale.ROOT
+                    )
             )) {
 
                 Change change = new Change();
 
-                change.type = ChangeType.DELETE;
-                change.table = table.table;
-                change.column = existing.name;
-                change.detail =
-                        "currently " + existing.spannerType;
+                change.type =
+                        ChangeType.DELETE;
 
-                change.ddl = String.format(
-                        "ALTER TABLE %s DROP COLUMN %s",
-                        table.table,
-                        existing.name
-                );
+                change.table =
+                        table.table;
+
+                change.column =
+                        existing.name;
+
+                change.detail =
+                        "currently "
+                                + existing.spannerType;
+
+                change.ddl =
+                        String.format(
+                                "ALTER TABLE %s "
+                                        + "DROP COLUMN %s",
+                                table.table,
+                                existing.name
+                        );
 
                 changes.add(change);
             }
@@ -550,14 +624,20 @@ public class SpannerSchemaSync {
         return changes;
     }
 
-    private static Map<String, LiveColumn> fetchLiveColumns(
+    // ================================================================
+    // Fetch live columns
+    // ================================================================
+
+    private static Map<String, LiveColumn>
+    fetchLiveColumns(
             DatabaseClient dbClient,
             String tableName) {
 
         Map<String, LiveColumn> result =
                 new LinkedHashMap<>();
 
-        Statement statement = Statement.newBuilder(
+        Statement statement =
+                Statement.newBuilder(
                         "SELECT COLUMN_NAME, SPANNER_TYPE, IS_NULLABLE "
                                 + "FROM INFORMATION_SCHEMA.COLUMNS "
                                 + "WHERE TABLE_SCHEMA = '' "
@@ -573,21 +653,31 @@ public class SpannerSchemaSync {
                              .executeQuery(statement)) {
 
             while (resultSet.next()) {
-                LiveColumn column = new LiveColumn();
+
+                LiveColumn column =
+                        new LiveColumn();
 
                 column.name =
-                        resultSet.getString("COLUMN_NAME");
+                        resultSet.getString(
+                                "COLUMN_NAME"
+                        );
 
                 column.spannerType =
-                        resultSet.getString("SPANNER_TYPE");
+                        resultSet.getString(
+                                "SPANNER_TYPE"
+                        );
 
                 column.nullable =
                         "YES".equalsIgnoreCase(
-                                resultSet.getString("IS_NULLABLE")
+                                resultSet.getString(
+                                        "IS_NULLABLE"
+                                )
                         );
 
                 result.put(
-                        column.name.toUpperCase(Locale.ROOT),
+                        column.name.toUpperCase(
+                                Locale.ROOT
+                        ),
                         column
                 );
             }
@@ -596,10 +686,15 @@ public class SpannerSchemaSync {
         return result;
     }
 
+    // ================================================================
+    // Build CREATE TABLE
+    // ================================================================
+
     private static String buildCreateTable(
             TableDef table) {
 
-        StringBuilder sb = new StringBuilder();
+        StringBuilder sb =
+                new StringBuilder();
 
         sb.append("CREATE TABLE ")
                 .append(table.table)
@@ -609,7 +704,8 @@ public class SpannerSchemaSync {
              i < table.columns.size();
              i++) {
 
-            ColumnDef column = table.columns.get(i);
+            ColumnDef column =
+                    table.columns.get(i);
 
             sb.append("  ")
                     .append(column.name)
@@ -639,13 +735,20 @@ public class SpannerSchemaSync {
         return sb.toString();
     }
 
+    // ================================================================
+    // Convert JSON type to Spanner type
+    // ================================================================
+
     private static String spannerType(
             ColumnDef column) {
 
         String type =
-                column.type.toUpperCase(Locale.ROOT);
+                column.type.toUpperCase(
+                        Locale.ROOT
+                );
 
         switch (type) {
+
             case "STRING":
                 return "STRING("
                         + (column.size != null
@@ -676,6 +779,10 @@ public class SpannerSchemaSync {
                 );
         }
     }
+
+    // ================================================================
+    // Check STRING / BYTES widening
+    // ================================================================
 
     private static boolean isWideningStringOrBytes(
             String existingType,
@@ -708,6 +815,10 @@ public class SpannerSchemaSync {
         return desiredSize > existingSize;
     }
 
+    // ================================================================
+    // Base type
+    // ================================================================
+
     private static String baseType(
             String spannerType) {
 
@@ -718,8 +829,15 @@ public class SpannerSchemaSync {
             return spannerType;
         }
 
-        return spannerType.substring(0, index);
+        return spannerType.substring(
+                0,
+                index
+        );
     }
+
+    // ================================================================
+    // Extract size
+    // ================================================================
 
     private static Integer extractSize(
             String spannerType) {
@@ -748,6 +866,61 @@ public class SpannerSchemaSync {
             return Integer.parseInt(inner);
         } catch (NumberFormatException e) {
             return null;
+        }
+    }
+
+    // ================================================================
+    // Check for deletes
+    // ================================================================
+
+    private static boolean containsDeletes(
+            List<Change> changes) {
+
+        for (Change change : changes) {
+
+            if (change.type == ChangeType.DELETE) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // ================================================================
+    // Filter changes
+    // ================================================================
+
+    private static List<Change> filter(
+            List<Change> changes,
+            ChangeType type) {
+
+        List<Change> result =
+                new ArrayList<>();
+
+        for (Change change : changes) {
+
+            if (change.type == type) {
+                result.add(change);
+            }
+        }
+
+        return result;
+    }
+
+    // ================================================================
+    // Load schema.json
+    // ================================================================
+
+    private static SchemaFile loadSchema(
+            String path) throws Exception {
+
+        try (Reader reader =
+                     new FileReader(path)) {
+
+            return new Gson().fromJson(
+                    reader,
+                    SchemaFile.class
+            );
         }
     }
 }
