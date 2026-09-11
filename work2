@@ -1,25 +1,1030 @@
-{
-  "tables": [
-    {
-      "table": "Users",
-      "primaryKey": ["UserId"],
-      "columns": [
-        { "name": "UserId",    "type": "STRING",    "size": 36,  "nullable": false },
-        { "name": "Email",     "type": "STRING",    "size": 255, "nullable": true },
-        { "name": "FullName",  "type": "STRING",    "size": 128, "nullable": true },
-        { "name": "CreatedAt", "type": "TIMESTAMP",              "nullable": true },
-        { "name": "IsActive",  "type": "BOOL",                   "nullable": true }
-      ]
-    },
-    {
-      "table": "Orders",
-      "primaryKey": ["OrderId"],
-      "columns": [
-        { "name": "OrderId",    "type": "STRING",  "size": 36, "nullable": false },
-        { "name": "UserId",     "type": "STRING",  "size": 36, "nullable": false },
-        { "name": "AmountCents","type": "INT64",               "nullable": true },
-        { "name": "Status",     "type": "STRING",  "size": 32, "nullable": true }
-      ]
+package com.example.spannersync;
+
+import com.google.cloud.spanner.DatabaseClient;
+import com.google.cloud.spanner.DatabaseId;
+import com.google.cloud.spanner.ResultSet;
+import com.google.cloud.spanner.Spanner;
+import com.google.cloud.spanner.SpannerOptions;
+import com.google.cloud.spanner.Statement;
+import com.google.cloud.spanner.admin.database.v1.DatabaseAdminClient;
+import com.google.gson.Gson;
+import com.google.gson.annotations.SerializedName;
+import com.google.spanner.admin.database.v1.DatabaseName;
+
+import java.io.FileReader;
+import java.io.Reader;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.Set;
+
+public class SpannerSchemaSync {
+
+    // ================================================================
+    // CONFIGURATION
+    // ================================================================
+
+    private static final String PROJECT_ID = "YOUR_PROJECT_ID";
+    private static final String INSTANCE_ID = "YOUR_INSTANCE_ID";
+    private static final String DATABASE_ID = "YOUR_DATABASE_ID";
+
+    /*
+     * Add separate schema JSON files for each table here.
+     *
+     * Example:
+     *
+     * new SchemaConfig(
+     *         "PAYMENT",
+     *         "/path/to/payment-schema.json"
+     * )
+     *
+     * new SchemaConfig(
+     *         "BENEFICIARY",
+     *         "/path/to/beneficiary-schema.json"
+     * )
+     */
+
+    private static final List<SchemaConfig> SCHEMAS = List.of(
+
+            // --------------------------------------------------------
+            // TABLE 1
+            // --------------------------------------------------------
+
+            new SchemaConfig(
+                    "TABLE_1",
+                    "/path/to/table1-schema.json"
+            ),
+
+            // --------------------------------------------------------
+            // TABLE 2
+            // --------------------------------------------------------
+
+            new SchemaConfig(
+                    "TABLE_2",
+                    "/path/to/table2-schema.json"
+            )
+
+            // Add more tables here
+    );
+
+    // ================================================================
+    // Schema configuration
+    // ================================================================
+
+    private static class SchemaConfig {
+
+        String tableName;
+        String schemaPath;
+
+        SchemaConfig(
+                String tableName,
+                String schemaPath) {
+
+            this.tableName = tableName;
+            this.schemaPath = schemaPath;
+        }
     }
-  ]
+
+    // ================================================================
+    // JSON model
+    // ================================================================
+
+    public static class SchemaFile {
+        List<TableDef> tables;
+    }
+
+    public static class TableDef {
+
+        String table;
+
+        @SerializedName("primaryKey")
+        List<String> primaryKey;
+
+        List<ColumnDef> columns;
+    }
+
+    public static class ColumnDef {
+
+        String name;
+        String type;
+        Integer size;
+        Boolean nullable;
+
+        boolean isNullable() {
+            return nullable == null || nullable;
+        }
+    }
+
+    // ================================================================
+    // Live schema model
+    // ================================================================
+
+    private static class LiveColumn {
+
+        String name;
+        String spannerType;
+        boolean nullable;
+    }
+
+    // ================================================================
+    // Change model
+    // ================================================================
+
+    private enum ChangeType {
+        CREATE_TABLE,
+        ADD,
+        MODIFY,
+        DELETE
+    }
+
+    private static class Change {
+
+        ChangeType type;
+        String table;
+        String column;
+        String detail;
+        String ddl;
+    }
+
+    // ================================================================
+    // Main
+    // ================================================================
+
+    public static void main(String[] args) throws Exception {
+
+        System.out.println();
+        System.out.println("======================================");
+        System.out.println("       SPANNER SCHEMA SYNC TOOL");
+        System.out.println("======================================");
+        System.out.println();
+
+        SpannerOptions options = SpannerOptions.newBuilder()
+                .setProjectId(PROJECT_ID)
+                .build();
+
+        try (Spanner spanner = options.getService();
+             DatabaseAdminClient adminClient =
+                     DatabaseAdminClient.create()) {
+
+            DatabaseId dbId = DatabaseId.of(
+                    PROJECT_ID,
+                    INSTANCE_ID,
+                    DATABASE_ID
+            );
+
+            DatabaseClient dbClient =
+                    spanner.getDatabaseClient(dbId);
+
+            System.out.println(
+                    "Connected to database: " + DATABASE_ID
+            );
+
+            System.out.println();
+
+            List<Change> allChanges = new ArrayList<>();
+
+            // --------------------------------------------------------
+            // Process each configured table
+            // --------------------------------------------------------
+
+            for (SchemaConfig config : SCHEMAS) {
+
+                System.out.println(
+                        "Processing table: "
+                                + config.tableName
+                );
+
+                System.out.println(
+                        "Schema file: "
+                                + config.schemaPath
+                );
+
+                SchemaFile schema =
+                        loadSchema(config.schemaPath);
+
+                if (schema == null || schema.tables == null) {
+                    throw new IllegalArgumentException(
+                            "Invalid schema file: "
+                                    + config.schemaPath
+                    );
+                }
+
+                for (TableDef table : schema.tables) {
+
+                    /*
+                     * The table name configured above is authoritative.
+                     * This prevents accidentally applying a schema
+                     * file to the wrong table.
+                     */
+
+                    table.table = config.tableName;
+
+                    allChanges.addAll(
+                            diffTable(
+                                    dbClient,
+                                    table
+                            )
+                    );
+                }
+
+                System.out.println();
+            }
+
+            // --------------------------------------------------------
+            // No changes
+            // --------------------------------------------------------
+
+            if (allChanges.isEmpty()) {
+
+                System.out.println(
+                        "Schema already up to date."
+                );
+
+                return;
+            }
+
+            // --------------------------------------------------------
+            // Print complete diff
+            // --------------------------------------------------------
+
+            printReport(allChanges);
+
+            // --------------------------------------------------------
+            // Ask whether DELETE operations are allowed
+            // --------------------------------------------------------
+
+            Scanner scanner = new Scanner(System.in);
+
+            boolean allowDelete = false;
+
+            if (containsDeletes(allChanges)) {
+
+                System.out.print(
+                        "Allow DELETE operations? (yes/no): "
+                );
+
+                String deleteInput =
+                        scanner.nextLine()
+                                .trim()
+                                .toLowerCase(Locale.ROOT);
+
+                allowDelete =
+                        deleteInput.equals("yes");
+            }
+
+            // --------------------------------------------------------
+            // Build DDL
+            // --------------------------------------------------------
+
+            List<String> ddlToRun =
+                    new ArrayList<>();
+
+            for (Change change : allChanges) {
+
+                if (change.type == ChangeType.DELETE
+                        && !allowDelete) {
+
+                    continue;
+                }
+
+                if (change.ddl != null) {
+                    ddlToRun.add(change.ddl);
+                }
+            }
+
+            if (ddlToRun.isEmpty()) {
+
+                System.out.println();
+                System.out.println(
+                        "No changes available to apply."
+                );
+
+                return;
+            }
+
+            // --------------------------------------------------------
+            // Final confirmation
+            // --------------------------------------------------------
+
+            System.out.println();
+            System.out.println("======================================");
+            System.out.println("           APPLY CHANGES?");
+            System.out.println("======================================");
+            System.out.println();
+
+            System.out.println(
+                    "The following "
+                            + ddlToRun.size()
+                            + " statement(s) will be executed:"
+            );
+
+            System.out.println();
+
+            for (String ddl : ddlToRun) {
+                System.out.println(
+                        "  " + ddl + ";"
+                );
+            }
+
+            System.out.println();
+
+            System.out.print(
+                    "Do you want to apply these schema changes? "
+                            + "(yes/no): "
+            );
+
+            String confirmation =
+                    scanner.nextLine()
+                            .trim()
+                            .toLowerCase(Locale.ROOT);
+
+            if (!confirmation.equals("yes")) {
+
+                System.out.println();
+                System.out.println(
+                        "Schema update cancelled. "
+                                + "No changes were made."
+                );
+
+                return;
+            }
+
+            // --------------------------------------------------------
+            // Apply DDL
+            // --------------------------------------------------------
+
+            System.out.println();
+            System.out.println(
+                    "Applying "
+                            + ddlToRun.size()
+                            + " statement(s)..."
+            );
+
+            DatabaseName dbName = DatabaseName.of(
+                    PROJECT_ID,
+                    INSTANCE_ID,
+                    DATABASE_ID
+            );
+
+            adminClient
+                    .updateDatabaseDdlAsync(
+                            dbName,
+                            ddlToRun
+                    )
+                    .get();
+
+            System.out.println();
+            System.out.println(
+                    "Schema update completed successfully."
+            );
+        }
+    }
+
+    // ================================================================
+    // Load schema
+    // ================================================================
+
+    private static SchemaFile loadSchema(
+            String path) throws Exception {
+
+        try (Reader reader =
+                     new FileReader(path)) {
+
+            return new Gson().fromJson(
+                    reader,
+                    SchemaFile.class
+            );
+        }
+    }
+
+    // ================================================================
+    // Diff table
+    // ================================================================
+
+    private static List<Change> diffTable(
+            DatabaseClient dbClient,
+            TableDef table) {
+
+        List<Change> changes =
+                new ArrayList<>();
+
+        Map<String, LiveColumn> live =
+                fetchLiveColumns(
+                        dbClient,
+                        table.table
+                );
+
+        // ------------------------------------------------------------
+        // Table doesn't exist
+        // ------------------------------------------------------------
+
+        if (live.isEmpty()) {
+
+            Change change = new Change();
+
+            change.type =
+                    ChangeType.CREATE_TABLE;
+
+            change.table =
+                    table.table;
+
+            change.ddl =
+                    buildCreateTable(table);
+
+            changes.add(change);
+
+            return changes;
+        }
+
+        // ------------------------------------------------------------
+        // Desired column names
+        // ------------------------------------------------------------
+
+        Set<String> desiredColumnNames =
+                new LinkedHashSet<>();
+
+        for (ColumnDef column : table.columns) {
+
+            desiredColumnNames.add(
+                    column.name.toUpperCase(
+                            Locale.ROOT
+                    )
+            );
+        }
+
+        // ------------------------------------------------------------
+        // ADD / MODIFY
+        // ------------------------------------------------------------
+
+        for (ColumnDef column : table.columns) {
+
+            LiveColumn existing =
+                    live.get(
+                            column.name.toUpperCase(
+                                    Locale.ROOT
+                            )
+                    );
+
+            String desiredType =
+                    spannerType(column);
+
+            // --------------------------------------------------------
+            // ADD
+            // --------------------------------------------------------
+
+            if (existing == null) {
+
+                Change change = new Change();
+
+                change.type =
+                        ChangeType.ADD;
+
+                change.table =
+                        table.table;
+
+                change.column =
+                        column.name;
+
+                change.detail =
+                        desiredType
+                                + (column.isNullable()
+                                ? ""
+                                : " NOT NULL");
+
+                change.ddl =
+                        String.format(
+                                "ALTER TABLE %s "
+                                        + "ADD COLUMN %s %s%s",
+                                table.table,
+                                column.name,
+                                desiredType,
+                                column.isNullable()
+                                        ? ""
+                                        : " NOT NULL"
+                        );
+
+                changes.add(change);
+            }
+
+            // --------------------------------------------------------
+            // MODIFY - STRING / BYTES widening
+            // --------------------------------------------------------
+
+            else if (
+                    isWideningStringOrBytes(
+                            existing.spannerType,
+                            desiredType
+                    )
+            ) {
+
+                Change change = new Change();
+
+                change.type =
+                        ChangeType.MODIFY;
+
+                change.table =
+                        table.table;
+
+                change.column =
+                        column.name;
+
+                change.detail =
+                        existing.spannerType
+                                + " -> "
+                                + desiredType;
+
+                String nullability =
+                        existing.nullable
+                                ? ""
+                                : " NOT NULL";
+
+                change.ddl =
+                        String.format(
+                                "ALTER TABLE %s "
+                                        + "ALTER COLUMN %s %s%s",
+                                table.table,
+                                column.name,
+                                desiredType,
+                                nullability
+                        );
+
+                changes.add(change);
+            }
+        }
+
+        // ------------------------------------------------------------
+        // DELETE
+        // ------------------------------------------------------------
+
+        for (LiveColumn existing : live.values()) {
+
+            if (!desiredColumnNames.contains(
+                    existing.name.toUpperCase(
+                            Locale.ROOT
+                    )
+            )) {
+
+                Change change = new Change();
+
+                change.type =
+                        ChangeType.DELETE;
+
+                change.table =
+                        table.table;
+
+                change.column =
+                        existing.name;
+
+                change.detail =
+                        "currently "
+                                + existing.spannerType;
+
+                change.ddl =
+                        String.format(
+                                "ALTER TABLE %s "
+                                        + "DROP COLUMN %s",
+                                table.table,
+                                existing.name
+                        );
+
+                changes.add(change);
+            }
+        }
+
+        return changes;
+    }
+
+    // ================================================================
+    // Fetch live columns
+    // ================================================================
+
+    private static Map<String, LiveColumn>
+    fetchLiveColumns(
+            DatabaseClient dbClient,
+            String tableName) {
+
+        Map<String, LiveColumn> result =
+                new LinkedHashMap<>();
+
+        Statement statement =
+                Statement.newBuilder(
+                        "SELECT COLUMN_NAME, SPANNER_TYPE, IS_NULLABLE "
+                                + "FROM INFORMATION_SCHEMA.COLUMNS "
+                                + "WHERE TABLE_SCHEMA = '' "
+                                + "AND TABLE_NAME = @tableName"
+                )
+                .bind("tableName")
+                .to(tableName)
+                .build();
+
+        try (ResultSet resultSet =
+                     dbClient
+                             .singleUse()
+                             .executeQuery(statement)) {
+
+            while (resultSet.next()) {
+
+                LiveColumn column =
+                        new LiveColumn();
+
+                column.name =
+                        resultSet.getString(
+                                "COLUMN_NAME"
+                        );
+
+                column.spannerType =
+                        resultSet.getString(
+                                "SPANNER_TYPE"
+                        );
+
+                column.nullable =
+                        "YES".equalsIgnoreCase(
+                                resultSet.getString(
+                                        "IS_NULLABLE"
+                                )
+                        );
+
+                result.put(
+                        column.name.toUpperCase(
+                                Locale.ROOT
+                        ),
+                        column
+                );
+            }
+        }
+
+        return result;
+    }
+
+    // ================================================================
+    // Build CREATE TABLE
+    // ================================================================
+
+    private static String buildCreateTable(
+            TableDef table) {
+
+        StringBuilder sb =
+                new StringBuilder();
+
+        sb.append("CREATE TABLE ")
+                .append(table.table)
+                .append(" (\n");
+
+        for (int i = 0;
+             i < table.columns.size();
+             i++) {
+
+            ColumnDef column =
+                    table.columns.get(i);
+
+            sb.append("  ")
+                    .append(column.name)
+                    .append(" ")
+                    .append(spannerType(column));
+
+            if (!column.isNullable()) {
+                sb.append(" NOT NULL");
+            }
+
+            if (i < table.columns.size() - 1) {
+                sb.append(",");
+            }
+
+            sb.append("\n");
+        }
+
+        sb.append(") PRIMARY KEY (")
+                .append(
+                        String.join(
+                                ", ",
+                                table.primaryKey
+                        )
+                )
+                .append(")");
+
+        return sb.toString();
+    }
+
+    // ================================================================
+    // Convert JSON type to Spanner type
+    // ================================================================
+
+    private static String spannerType(
+            ColumnDef column) {
+
+        String type =
+                column.type.toUpperCase(
+                        Locale.ROOT
+                );
+
+        switch (type) {
+
+            case "STRING":
+                return "STRING("
+                        + (column.size != null
+                        ? column.size
+                        : "MAX")
+                        + ")";
+
+            case "BYTES":
+                return "BYTES("
+                        + (column.size != null
+                        ? column.size
+                        : "MAX")
+                        + ")";
+
+            case "INT64":
+            case "FLOAT64":
+            case "BOOL":
+            case "TIMESTAMP":
+            case "DATE":
+            case "NUMERIC":
+            case "JSON":
+                return type;
+
+            default:
+                throw new IllegalArgumentException(
+                        "Unsupported column type in "
+                                + "schema.json: "
+                                + column.type
+                );
+        }
+    }
+
+    // ================================================================
+    // Check STRING / BYTES widening
+    // ================================================================
+
+    private static boolean isWideningStringOrBytes(
+            String existingType,
+            String desiredType) {
+
+        Integer existingSize =
+                extractSize(existingType);
+
+        Integer desiredSize =
+                extractSize(desiredType);
+
+        boolean sameBaseType =
+                baseType(existingType)
+                        .equalsIgnoreCase(
+                                baseType(desiredType)
+                        );
+
+        if (!sameBaseType) {
+            return false;
+        }
+
+        if (existingSize == null) {
+            return false;
+        }
+
+        if (desiredSize == null) {
+            return true;
+        }
+
+        return desiredSize > existingSize;
+    }
+
+    // ================================================================
+    // Get base type
+    // ================================================================
+
+    private static String baseType(
+            String spannerType) {
+
+        int index =
+                spannerType.indexOf('(');
+
+        if (index == -1) {
+            return spannerType;
+        }
+
+        return spannerType.substring(
+                0,
+                index
+        );
+    }
+
+    // ================================================================
+    // Extract size
+    // ================================================================
+
+    private static Integer extractSize(
+            String spannerType) {
+
+        int start =
+                spannerType.indexOf('(');
+
+        int end =
+                spannerType.indexOf(')');
+
+        if (start == -1 || end == -1) {
+            return null;
+        }
+
+        String inner =
+                spannerType.substring(
+                        start + 1,
+                        end
+                );
+
+        if ("MAX".equalsIgnoreCase(inner)) {
+            return null;
+        }
+
+        try {
+            return Integer.parseInt(inner);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    // ================================================================
+    // Check for deletes
+    // ================================================================
+
+    private static boolean containsDeletes(
+            List<Change> changes) {
+
+        for (Change change : changes) {
+
+            if (change.type == ChangeType.DELETE) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // ================================================================
+    // Filter changes
+    // ================================================================
+
+    private static List<Change> filter(
+            List<Change> changes,
+            ChangeType type) {
+
+        List<Change> result =
+                new ArrayList<>();
+
+        for (Change change : changes) {
+
+            if (change.type == type) {
+                result.add(change);
+            }
+        }
+
+        return result;
+    }
+
+    // ================================================================
+    // Print report
+    // ================================================================
+
+    private static void printReport(
+            List<Change> changes) {
+
+        List<Change> creates =
+                filter(
+                        changes,
+                        ChangeType.CREATE_TABLE
+                );
+
+        List<Change> adds =
+                filter(
+                        changes,
+                        ChangeType.ADD
+                );
+
+        List<Change> modifies =
+                filter(
+                        changes,
+                        ChangeType.MODIFY
+                );
+
+        List<Change> deletes =
+                filter(
+                        changes,
+                        ChangeType.DELETE
+                );
+
+        System.out.println();
+        System.out.println("======================================");
+        System.out.println("          SPANNER SCHEMA DIFF");
+        System.out.println("======================================");
+        System.out.println();
+
+        System.out.println(
+                "Tables to create : " + creates.size()
+        );
+
+        System.out.println(
+                "Columns to add   : " + adds.size()
+        );
+
+        System.out.println(
+                "Columns to modify: " + modifies.size()
+        );
+
+        System.out.println(
+                "Columns to delete: " + deletes.size()
+        );
+
+        System.out.println();
+
+        if (!creates.isEmpty()) {
+
+            System.out.println("NEW TABLES:");
+
+            for (Change change : creates) {
+                System.out.println(
+                        "  + " + change.table
+                );
+            }
+
+            System.out.println();
+        }
+
+        if (!adds.isEmpty()) {
+
+            System.out.println("COLUMNS TO ADD:");
+
+            for (Change change : adds) {
+
+                System.out.println(
+                        "  + "
+                                + change.table
+                                + "."
+                                + change.column
+                                + " ("
+                                + change.detail
+                                + ")"
+                );
+            }
+
+            System.out.println();
+        }
+
+        if (!modifies.isEmpty()) {
+
+            System.out.println(
+                    "COLUMNS TO MODIFY:"
+            );
+
+            for (Change change : modifies) {
+
+                System.out.println(
+                        "  ~ "
+                                + change.table
+                                + "."
+                                + change.column
+                                + " "
+                                + change.detail
+                );
+            }
+
+            System.out.println();
+        }
+
+        if (!deletes.isEmpty()) {
+
+            System.out.println(
+                    "COLUMNS TO DELETE:"
+            );
+
+            for (Change change : deletes) {
+
+                System.out.println(
+                        "  - "
+                                + change.table
+                                + "."
+                                + change.column
+                                + " ("
+                                + change.detail
+                                + ")"
+                );
+            }
+
+            System.out.println();
+        }
+
+        System.out.println("PLANNED DDL:");
+
+        for (Change change : changes) {
+
+            if (change.ddl != null) {
+
+                System.out.println(
+                        "  " + change.ddl + ";"
+                );
+            }
+        }
+
+        System.out.println();
+    }
 }
