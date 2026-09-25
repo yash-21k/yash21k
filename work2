@@ -1,40 +1,38 @@
-{
-  "primaryKey": [
-    "PAYMENT_ID"
-  ],
-  "columns": [
-    {
-      "name": "PAYMENT_ID",
-      "type": "STRING",
-      "size": 64,
-      "nullable": false
-    },
-    {
-      "name": "UETR",
-      "type": "STRING",
-      "size": 100,
-      "nullable": true
-    },
-    {
-      "name": "AMOUNT",
-      "type": "NUMERIC",
-      "nullable": true
-    },
-    {
-      "name": "STATUS",
-      "type": "STRING",
-      "size": 50,
-      "nullable": true
-    },
-    {
-      "name": "CREATED_AT",
-      "type": "TIMESTAMP",
-      "nullable": false
-    },
-    {
-      "name": "IS_ACTIVE",
-      "type": "BOOL",
-      "nullable": true
+CREATE TEMP FUNCTION XML_FLATTEN(xml STRING)
+RETURNS ARRAY<STRUCT<xpath STRING, value STRING>>
+LANGUAGE js AS r"""
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'text/xml');
+  const result = [];
+
+  function walk(node, path) {
+    if (node.nodeType !== 1) return;
+
+    const currentPath = path + '/' + node.nodeName;
+    let hasElementChild = false;
+
+    for (const child of node.childNodes) {
+      if (child.nodeType === 1) {
+        hasElementChild = true;
+        walk(child, currentPath);
+      }
     }
-  ]
-}
+
+    if (!hasElementChild) {
+      result.push({
+        xpath: currentPath,
+        value: node.textContent.trim()
+      });
+    }
+  }
+
+  walk(doc.documentElement, '');
+
+  return result;
+""";
+
+SELECT
+  x.xpath,
+  x.value
+FROM `project.dataset.table` t,
+UNNEST(XML_FLATTEN(t.xml_column)) x;
