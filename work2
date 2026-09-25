@@ -1,32 +1,62 @@
 CREATE TEMP FUNCTION XML_FLATTEN(xml STRING)
 RETURNS ARRAY<STRUCT<xpath STRING, value STRING>>
 LANGUAGE js AS r"""
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, 'text/xml');
   const result = [];
+  const stack = [];
 
-  function walk(node, path) {
-    if (node.nodeType !== 1) return;
+  // Remove XML declaration, comments and CDATA handling separately
+  xml = xml.replace(/<\?xml[\s\S]*?\?>/g, '');
+  xml = xml.replace(/<!--[\s\S]*?-->/g, '');
 
-    const currentPath = path + '/' + node.nodeName;
-    let hasElementChild = false;
+  // Split XML into tags and text
+  const tokens = xml.match(/<[^>]+>|[^<]+/g) || [];
 
-    for (const child of node.childNodes) {
-      if (child.nodeType === 1) {
-        hasElementChild = true;
-        walk(child, currentPath);
-      }
+  for (const token of tokens) {
+
+    // Closing tag
+    if (/^<\//.test(token)) {
+      stack.pop();
+      continue;
     }
 
-    if (!hasElementChild) {
+    // Opening tag
+    if (/^</.test(token)) {
+
+      // Ignore declarations / processing instructions
+      if (/^<\?/.test(token) || /^<!/.test(token)) {
+        continue;
+      }
+
+      const selfClosing = /\/>$/.test(token);
+
+      // Extract tag name
+      const match = token.match(/^<\s*([^\s/>]+)/);
+
+      if (!match) {
+        continue;
+      }
+
+      const tagName = match[1];
+
+      stack.push(tagName);
+
+      if (selfClosing) {
+        stack.pop();
+      }
+
+      continue;
+    }
+
+    // Text value
+    const value = token.trim();
+
+    if (value && stack.length > 0) {
       result.push({
-        xpath: currentPath,
-        value: node.textContent.trim()
+        xpath: '/' + stack.join('/'),
+        value: value
       });
     }
   }
-
-  walk(doc.documentElement, '');
 
   return result;
 """;
@@ -34,5 +64,5 @@ LANGUAGE js AS r"""
 SELECT
   x.xpath,
   x.value
-FROM `project.dataset.table` t,
-UNNEST(XML_FLATTEN(t.xml_column)) x;
+FROM `hsbc-8578861-pd1.pdp_global_eu_globalwallet_raw_tab_sit_dev0000.message_rt` t,
+UNNEST(XML_FLATTEN(t.body)) x;
